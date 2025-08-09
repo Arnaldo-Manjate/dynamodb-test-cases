@@ -1,14 +1,16 @@
 {
-  "name": "dynamodb-testcases",
+  "name": "dynamodb-testcases-infrastructure",
   "version": "0.1.0",
   "bin": {
-    "dynamodb-testcases": "bin/dynamodb-testcases.js"
+    "infrastructure": "bin/infrastructure.js"
   },
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
     "test": "jest",
-    "cdk": "cdk"
+    "cdk": "cdk",
+    "deploy": "cdk deploy",
+    "destroy": "cdk destroy"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",
@@ -22,5 +24,6 @@
   "dependencies": {
     "aws-cdk-lib": "2.202.0",
     "constructs": "^10.0.0"
-  }
+  },
+  "packageManager": "pnpm@8.15.0"
 }
