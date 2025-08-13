@@ -1,0 +1,21 @@
+{
+    "name": "dynamo-queries",
+    "version": "1.0.0",
+    "description": "DynamoDB Design Patterns - 6 Points Side by Side",
+    "main": "index.js",
+    "scripts": {
+        "build": "tsc",
+        "start": "ts-node index.ts",
+        "test": "ts-node index.ts",
+        "query-tables": "pnpm run build && node dist/index.js"
+    },
+    "dependencies": {
+        "@aws-sdk/client-dynamodb": "^3.400.0",
+        "@aws-sdk/lib-dynamodb": "^3.400.0"
+    },
+    "devDependencies": {
+        "@types/node": "^20.0.0",
+        "ts-node": "^10.9.0",
+        "typescript": "^5.0.0"
+    }
+}

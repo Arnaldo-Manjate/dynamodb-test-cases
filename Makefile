@@ -1,17 +1,16 @@
 # DynamoDB Performance Test Project Makefile
 
 # Default values
-USER_COUNT ?= 10
-ORDER_COUNT ?= 1000
-TEST_USER_COUNT ?= 10
+USER_COUNT ?= 5
+POST_COUNT ?= 25
 AWS_REGION ?= us-east-1
 
-.PHONY: install deploy destroy run-tests report-only clean
+.PHONY: install deploy destroy query-tables demo clean
 
 # Install dependencies
 install:
 	cd infrastructure && pnpm install
-	cd dynamo-tests && pnpm install
+	cd dynamo-queries && pnpm install
 
 # Deploy infrastructure
 deploy:
@@ -21,15 +20,15 @@ deploy:
 destroy:
 	cd infrastructure && pnpm run destroy
 
-# Run full test suite
-run-tests:
-	cd dynamo-tests && AWS_REGION=$(AWS_REGION) pnpm run run-tests -- --user-count $(USER_COUNT) --order-count $(ORDER_COUNT) --test-user-count $(TEST_USER_COUNT)
+# Check if required tables exist
+query-tables:
+	cd dynamo-queries && AWS_REGION=$(AWS_REGION) pnpm run query-tables
 
-# Run report only (no data insertion)
-report-only:
-	cd dynamo-tests && AWS_REGION=$(AWS_REGION) pnpm run report-only -- --test-user-count $(TEST_USER_COUNT)
+# Run the dynamo-queries demonstration
+demo:
+	cd dynamo-queries && AWS_REGION=$(AWS_REGION) pnpm start -- --user-count $(USER_COUNT) --post-count $(POST_COUNT)
 
 # Clean up generated files
 clean:
-	rm -f dynamo-tests/test-results.json
-	rm -f dynamo-tests/results.md 
+	rm -f dynamo-queries/dist/*
+	rm -rf dynamo-queries/dist/ 
