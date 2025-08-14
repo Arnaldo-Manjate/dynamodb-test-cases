@@ -1,3 +1,12 @@
+// Entity Type Enum
+export enum EntityType {
+    USER = 'USER',
+    POST = 'POST',
+    COMMENT = 'COMMENT',
+    FOLLOWER = 'FOLLOWER',
+    LIKE = 'LIKE'
+}
+
 // Relational Design Types
 export interface RelationalUser {
     PK: string; // userId
@@ -15,11 +24,36 @@ export interface RelationalPost {
     createdAt: string;
 }
 
+export interface RelationalComment {
+    commentId: string;
+    id: string;
+    userId: string;
+    postId: string;
+    content: string;
+    createdAt: string;
+}
+
+export interface RelationalFollower {
+    followId: string;
+    id: string;
+    followerId: string;
+    followingId: string;
+    createdAt: string;
+}
+
+export interface RelationalLike {
+    likeId: string;
+    id: string;
+    userId: string;
+    postId: string;
+    createdAt: string;
+}
+
 // Single Table Design Types
 export interface SingleTableUser {
     PK: string; // USER#<userId>
     SK: string; // USER#<userId>
-    entityType: 'USER';
+    entityType: EntityType.USER;
     id: string;
     username: string;
     email: string;
@@ -28,11 +62,45 @@ export interface SingleTableUser {
 
 export interface SingleTablePost {
     PK: string; // USER#<userId>
-    SK: string; // POST#<postId>#<date>
-    entityType: 'POST';
+    SK: string; // #POSTS#<date>
+    entityType: EntityType.POST;
     id: string;
     userId: string;
     content: string;
+    createdAt: string;
+    datePrefix: string;
+}
+
+export interface SingleTableComment {
+    PK: string; // USER#<userId>
+    SK: string; // #COMMENTS#<date>
+    entityType: EntityType.COMMENT;
+    id: string;
+    userId: string;
+    postId: string;
+    content: string;
+    createdAt: string;
+    datePrefix: string;
+}
+
+export interface SingleTableFollower {
+    PK: string; // USER#<userId>
+    SK: string; // #FOLLOWERS#<date>
+    entityType: EntityType.FOLLOWER;
+    id: string;
+    followerId: string;
+    followingId: string;
+    createdAt: string;
+    datePrefix: string;
+}
+
+export interface SingleTableLike {
+    PK: string; // USER#<userId>
+    SK: string; // #LIKES#<date>
+    entityType: EntityType.LIKE;
+    id: string;
+    userId: string;
+    postId: string;
     createdAt: string;
     datePrefix: string;
 }
@@ -55,11 +123,17 @@ export interface TestResult {
 export interface RelationalTestData {
     users: RelationalUser[];
     posts: RelationalPost[];
+    comments: RelationalComment[];
+    followers: RelationalFollower[];
+    likes: RelationalLike[];
 }
 
 export interface SingleTableTestData {
     users: SingleTableUser[];
     posts: SingleTablePost[];
+    comments: SingleTableComment[];
+    followers: SingleTableFollower[];
+    likes: SingleTableLike[];
 }
 
 export interface CompleteTestData {

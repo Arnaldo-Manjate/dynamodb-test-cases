@@ -16,15 +16,15 @@ The project showcases **6 key points** from your article, comparing each side by
 
 3. **GSI Necessity vs Strategic GSI Usage**
    - ❌ Relational: Forced GSI due to poor schema
-   - ✅ Single Table: Strategic GSI only when needed
+   - ✅ Single Table: No GSI needed for frequently accessed patterns
 
 4. **GSI Naming Anti-patterns vs Generic Names**
    - ❌ Relational: Descriptive names (PostsByDateIndex)
-   - ✅ Single Table: Generic names (EntityTypeIndex)
+   - ✅ Single Table: Generic names (EntityTypeIndex for analytics only)
 
 5. **Multiple Queries vs Single Query Efficiency**
-   - ❌ Relational: Multiple queries for user + posts
-   - ✅ Single Table: Single query gets everything
+   - ❌ Relational: Multiple queries for user + posts + comments + followers + likes
+   - ✅ Single Table: Single query using PK=USER#userId with OR + begins_with for all entity types
 
 6. **Inefficient Access Patterns vs Strategic Design**
    - ❌ Relational: Scan operations required
@@ -107,10 +107,11 @@ If you get errors:
 
 ## 📚 Key Takeaways
 
-- **Single Table Design** reduces GSI complexity
+- **Single Table Design** eliminates GSI complexity for frequently accessed patterns
 - **Generic PK/SK patterns** provide flexibility  
-- **Strategic GSI usage** saves costs
-- **Single queries** are more efficient than multiple queries
-- **Proper schema design** eliminates scan operations
+- **Proper key design** with PK=USER#userId naturally groups all user data
+- **Single query efficiency** using OR + begins_with for all entity types
+- **No GSI needed** for frequently accessed patterns - pure efficiency!
+- **Strategic schema design** enables efficient queries without unnecessary complexity
 
 This demonstration makes it crystal clear why Single Table Design is superior for DynamoDB applications! 

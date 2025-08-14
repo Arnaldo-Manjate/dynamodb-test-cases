@@ -2,14 +2,37 @@ import { BaseDAO } from './base-dao';
 import { TestResult } from '../@types';
 import { QueryCommand, GetCommand, ScanCommand, PutCommand, BatchWriteCommand } from '@aws-sdk/lib-dynamodb';
 
+/**
+ * Relational Design DAO - Demonstrates Anti-patterns
+ * 
+ * DESIGN PHILOSOPHY: Traditional relational thinking applied to DynamoDB
+ * 
+ * This implementation shows the problems with relational design in DynamoDB:
+ * - Multiple tables require multiple network requests for related data
+ * - Missing sort keys force GSI creation for basic queries
+ * - Poor access patterns lead to scan operations and high RCU consumption
+ * - No efficient way to retrieve all user data in one operation
+ * 
+ * Key Problems:
+ * - Need 4+ separate requests to get complete user data
+ * - Forced GSI usage due to poor schema design
+ * - Higher latency and RCU consumption
+ * - Complex index management
+ */
 export class RelationalDAO extends BaseDAO {
     private usersTableName: string;
     private postsTableName: string;
+    private commentsTableName: string;
+    private followersTableName: string;
+    private likesTableName: string;
 
-    constructor(usersTableName: string, postsTableName: string, region: string = 'us-east-1') {
+    constructor(usersTableName: string, postsTableName: string, commentsTableName: string, followersTableName: string, likesTableName: string, region: string = 'us-east-1') {
         super(region);
         this.usersTableName = usersTableName;
         this.postsTableName = postsTableName;
+        this.commentsTableName = commentsTableName;
+        this.followersTableName = followersTableName;
+        this.likesTableName = likesTableName;
     }
 
     protected getDesignType(): 'Relational' {
@@ -171,6 +194,118 @@ export class RelationalDAO extends BaseDAO {
         );
     }
 
+    // ========================================
+    // POINTS 3 & 4 MERGED: MULTIPLE REQUESTS VS SINGLE QUERY
+    // Demonstrates: How relational design requires multiple network requests
+    // for the same data that single table design can get in one query
+    // ========================================
+
+    // Point 3 & 4: Multiple Network Requests - Bad Pattern
+    // Need 4 separate requests to get the same data that single table gets in 1
+    // This demonstrates the inefficiency of relational design for frequently accessed data
+    async getUserScreenData(userId: string): Promise<TestResult> {
+        return this.measureOperation(
+            async () => {
+                // BAD: Multiple network requests required for relational design
+                // 1. Get user
+                const userCommand = new GetCommand({
+                    TableName: this.usersTableName,
+                    Key: { PK: userId },
+                    ReturnConsumedCapacity: "TOTAL"
+                });
+                const user = await this.client.send(userCommand);
+
+                // 2. Get user posts (requires GSI since main table has postId as PK)
+                const postsCommand = new QueryCommand({
+                    TableName: this.postsTableName,
+                    IndexName: 'PostsByDateIndex',
+                    KeyConditionExpression: 'userId = :userId',
+                    ExpressionAttributeValues: { ':userId': userId },
+                    ReturnConsumedCapacity: "TOTAL"
+                });
+                const posts = await this.client.send(postsCommand);
+
+                // 3. Get user comments (need to query by postId and filter by userId)
+                let allComments: any[] = [];
+                if (posts.Items && posts.Items.length > 0) {
+                    for (const post of posts.Items) {
+                        const commentsCommand = new QueryCommand({
+                            TableName: this.commentsTableName,
+                            KeyConditionExpression: 'postId = :postId',
+                            FilterExpression: 'userId = :userId',
+                            ExpressionAttributeValues: {
+                                ':postId': post.postId,
+                                ':userId': userId
+                            },
+                            ReturnConsumedCapacity: "TOTAL"
+                        });
+                        const postComments = await this.client.send(commentsCommand);
+                        if (postComments.Items) {
+                            allComments.push(...postComments.Items);
+                        }
+                    }
+                }
+
+                // 4. Get user followers 
+                const followersCommand = new QueryCommand({
+                    TableName: this.followersTableName,
+                    KeyConditionExpression: 'followingId = :followingId',
+                    ExpressionAttributeValues: { ':followingId': userId },
+                    ReturnConsumedCapacity: "TOTAL"
+                });
+                const followers = await this.client.send(followersCommand);
+
+                // 5. Get user likes (need to query by postId and filter by userId)
+                let allLikes: any[] = [];
+                if (posts.Items && posts.Items.length > 0) {
+                    for (const post of posts.Items) {
+                        const likesCommand = new QueryCommand({
+                            TableName: this.likesTableName,
+                            KeyConditionExpression: 'postId = :postId',
+                            FilterExpression: 'userId = :userId',
+                            ExpressionAttributeValues: {
+                                ':postId': post.postId,
+                                ':userId': userId
+                            },
+                            ReturnConsumedCapacity: "TOTAL"
+                        });
+                        const postLikes = await this.client.send(likesCommand);
+                        if (postLikes.Items) {
+                            allLikes.push(...postLikes.Items);
+                        }
+                    }
+                }
+
+                // Return combined result with proper consumed capacity
+                const totalCapacity = (user.ConsumedCapacity?.CapacityUnits || 0) +
+                    (posts.ConsumedCapacity?.CapacityUnits || 0) +
+                    (followers.ConsumedCapacity?.CapacityUnits || 0);
+
+                return {
+                    user: user.Item,
+                    posts: posts.Items,
+                    comments: allComments,
+                    followers: followers.Items,
+                    likes: allLikes,
+                    ConsumedCapacity: {
+                        CapacityUnits: totalCapacity
+                    },
+                    Items: [
+                        user.Item,
+                        ...(posts.Items || []),
+                        ...allComments,
+                        ...(followers.Items || []),
+                        ...allLikes
+                    ],
+                    Count: 1 + (posts.Count || 0) + (allComments.length || 0) + (followers.Count || 0) + (allLikes.length || 0)
+                };
+            },
+            'GetUserScreenData_MultipleRequests',
+            'Relational',
+            1
+        );
+    }
+
     // Data insertion methods
     async createUser(user: any): Promise<TestResult> {
         return this.measureOperation(
@@ -210,5 +345,17 @@ export class RelationalDAO extends BaseDAO {
 
     async batchCreatePosts(posts: any[]): Promise<TestResult> {
         return this.batchWriteWithChunking(posts, this.postsTableName, 'BatchCreatePosts');
+    }
+
+    async batchCreateComments(comments: any[]): Promise<TestResult> {
+        return this.batchWriteWithChunking(comments, this.commentsTableName, 'BatchCreateComments');
+    }
+
+    async batchCreateFollowers(followers: any[]): Promise<TestResult> {
+        return this.batchWriteWithChunking(followers, this.followersTableName, 'BatchCreateFollowers');
+    }
+
+    async batchCreateLikes(likes: any[]): Promise<TestResult> {
+        return this.batchWriteWithChunking(likes, this.likesTableName, 'BatchCreateLikes');
     }
 } 

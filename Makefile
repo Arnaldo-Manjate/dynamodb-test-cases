@@ -3,6 +3,8 @@
 # Default values
 USER_COUNT ?= 5
 POST_COUNT ?= 25
+COMMENT_COUNT ?= 50
+LIKE_COUNT ?= 100
 AWS_REGION ?= us-east-1
 
 .PHONY: install deploy destroy query-tables demo clean
@@ -20,13 +22,13 @@ deploy:
 destroy:
 	cd infrastructure && pnpm run destroy
 
-# Check if required tables exist
+# run tests on existing data
 query-tables:
 	cd dynamo-queries && AWS_REGION=$(AWS_REGION) pnpm run query-tables
 
 # Run the dynamo-queries demonstration
 demo:
-	cd dynamo-queries && AWS_REGION=$(AWS_REGION) pnpm start -- --user-count $(USER_COUNT) --post-count $(POST_COUNT)
+	cd dynamo-queries && AWS_REGION=$(AWS_REGION) pnpm start -- --user-count $(USER_COUNT) --post-count $(POST_COUNT) --comment-count $(COMMENT_COUNT) --like-count $(LIKE_COUNT)
 
 # Clean up generated files
 clean:

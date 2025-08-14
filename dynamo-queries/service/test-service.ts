@@ -8,44 +8,64 @@ export class TestService {
     private singleTableDAO: SingleTableDAO;
 
     constructor(region: string = 'us-east-1') {
-        this.relationalDAO = new RelationalDAO('users-relational', 'posts-relational', region);
+        this.relationalDAO = new RelationalDAO(
+            'users-relational',
+            'posts-relational',
+            'comments-relational',
+            'followers-relational',
+            'likes-relational',
+            region
+        );
         this.singleTableDAO = new SingleTableDAO('single-table-social', region);
     }
 
-    async runAllTests(userCount: number = 5, postCount: number = 20, skipDataInsertion: boolean = false): Promise<void> {
+    async runAllTests(
+        userCount: number = 5,
+        postCount: number = 20,
+        commentCount: number = 50,
+        likeCount: number = 100,
+        skipDataInsertion: boolean = false
+    ): Promise<void> {
         console.log('Starting DynamoDB Design Pattern Tests');
 
         try {
             if (!skipDataInsertion) {
-                // Check if data already exists
                 const hasData = await this.checkIfDataExists();
-
-                if (false) {
-                    console.log('📋 Data already exists in tables - skipping insertion');
-                } else {
+                if (!hasData) {
                     // Generate test data
-                    console.log(`Generating test data: ${userCount} users, ${postCount} posts...`);
-                    const testData: CompleteTestData = DataGenerator.generateTestData(userCount, postCount);
+                    console.log(`Generating test data: ${userCount} users, ${postCount} posts, ${commentCount} comments, ${likeCount} likes...`);
+                    console.log(`Distribution: Random distribution across users`);
+                    const testData: CompleteTestData = DataGenerator.generateTestData(
+                        userCount,
+                        postCount,
+                        commentCount,
+                        likeCount
+                    );
 
                     // Log the generated data counts
                     console.log('📊 Generated Data Counts:');
                     console.log(`   - Relational Users: ${testData.relational.users.length}`);
                     console.log(`   - Relational Posts: ${testData.relational.posts.length}`);
+                    console.log(`   - Relational Comments: ${testData.relational.comments.length}`);
+                    console.log(`   - Relational Followers: ${testData.relational.followers.length}`);
+                    console.log(`   - Relational Likes: ${testData.relational.likes.length}`);
                     console.log(`   - Single Table Users: ${testData.singleTable.users.length}`);
                     console.log(`   - Single Table Posts: ${testData.singleTable.posts.length}`);
+                    console.log(`   - Single Table Comments: ${testData.singleTable.comments.length}`);
+                    console.log(`   - Single Table Followers: ${testData.singleTable.followers.length}`);
+                    console.log(`   - Single Table Likes: ${testData.singleTable.likes.length}`);
 
                     // Insert data
                     console.log('💾 Inserting test data...');
                     await this.insertTestData(testData);
+                } else {
+                    console.log('📋 Data already exists in tables - skipping insertion');
                 }
-            } else {
-                console.log('📋 Skipping data insertion - using existing data');
             }
 
             await this.testPoint1();
             await this.testPoint2();
-            await this.testPoint3();
-            await this.testPoint4();
+            await this.testMergedPoints(); // Merged points 3 and 4
             await this.testPoint5();
             await this.testPoint6();
 
@@ -74,6 +94,21 @@ export class TestService {
         console.log('  - Inserting posts...');
         await this.relationalDAO.batchCreatePosts(testData.relational.posts);
         await this.singleTableDAO.batchCreateItems(testData.singleTable.posts);
+
+        // Insert comments
+        console.log('  - Inserting comments...');
+        await this.relationalDAO.batchCreateComments(testData.relational.comments);
+        await this.singleTableDAO.batchCreateItems(testData.singleTable.comments);
+
+        // Insert followers
+        console.log('  - Inserting followers...');
+        await this.relationalDAO.batchCreateFollowers(testData.relational.followers);
+        await this.singleTableDAO.batchCreateItems(testData.singleTable.followers);
+
+        // Insert likes
+        console.log('  - Inserting likes...');
+        await this.relationalDAO.batchCreateLikes(testData.relational.likes);
+        await this.singleTableDAO.batchCreateItems(testData.singleTable.likes);
 
         console.log('Data insertion complete!');
     }
@@ -146,62 +181,41 @@ export class TestService {
         this.printComparison(badResult, goodResult);
     }
 
-    // Point 3: GSI Necessity vs Strategic GSI Usage
-    private async testPoint3(): Promise<void> {
-        console.log('\n🔍 Point 3: GSI Necessity vs Strategic GSI Usage');
-        console.log('='.repeat(60));
-
-        const testUserId = 'user-00001';
-        const startDate = '2024-01-01';
-        const endDate = '2024-12-31';
-
-        // Bad Pattern: Forced GSI usage
-        console.log('\n❌ BAD PATTERN - Relational Design:');
-        console.log('   Problem: Missing sort key forces GSI creation');
-        console.log('   GSI: PostsByDateIndex (required for date queries)');
-        console.log('   Cost: Additional storage and RCU consumption');
-
-        const badResult = await this.relationalDAO.getPostsByDateRange(testUserId, startDate, endDate);
-        console.log(`   Result: ${badResult.duration}ms, RCU: ${badResult.consumedCapacity?.readCapacityUnits || 'N/A'}, Data Points Fetched: ${badResult.itemCount}`);
-
-        // Good Pattern: Strategic GSI usage
-        console.log('\n✅ GOOD PATTERN - Single Table Design:');
-        console.log('   Solution: Sort key enables efficient date range queries');
-        console.log('   GSI: Only needed for infrequently accessed patterns');
-        console.log('   Cost: Lower storage and RCU consumption');
-
-        const goodResult = await this.singleTableDAO.getPostsByDateRange(testUserId, startDate, endDate);
-        console.log(`   Result: ${goodResult.duration}ms, RCU: ${goodResult.consumedCapacity?.readCapacityUnits || 'N/A'}, Data Points Fetched: ${goodResult.itemCount}`);
-
-        this.printComparison(badResult, goodResult);
-    }
-
-    // Point 4: GSI Naming Anti-patterns vs Generic Names
-    private async testPoint4(): Promise<void> {
-        console.log('\n🔍 Point 4: GSI Naming Anti-patterns vs Generic Names');
-        console.log('='.repeat(60));
+    // Test method for merged points 3 and 4
+    private async testMergedPoints(): Promise<void> {
+        console.log('\n🔍 Points 3 & 4: Static Identifiers Enable Powerful Queries vs Multiple Network Requests');
+        console.log('='.repeat(80));
 
         const testUserId = 'user-00001';
 
-        // Bad Pattern: Descriptive GSI names
+        // Bad Pattern: Relational design requires multiple network requests
         console.log('\n❌ BAD PATTERN - Relational Design:');
-        console.log('   GSI Names: PostsByDateIndex, CommentsByPostIndex');
-        console.log('   Problem: Names reveal implementation details');
-        console.log('   Maintenance: Harder to refactor and maintain');
+        console.log('   Problem: Need 4+ separate network requests to get complete user data');
+        console.log('   Requests: 1 for user + 1 for posts + N for comments (per post) + 1 for followers + N for likes (per post)');
+        console.log('   Cost: Higher latency, more RCU consumption, network overhead, complex query logic');
+        console.log('   Data: Scattered across multiple tables with poor access patterns, requires post-by-post iteration');
 
-        const badResult = await this.relationalDAO.getUserPostsWithGSI(testUserId);
+        const badResult = await this.relationalDAO.getUserScreenData(testUserId);
         console.log(`   Result: ${badResult.duration}ms, RCU: ${badResult.consumedCapacity?.readCapacityUnits || 'N/A'}, Data Points Fetched: ${badResult.itemCount}`);
 
-        // Good Pattern: Generic GSI names
+        // Good Pattern: Single table design with main table
         console.log('\n✅ GOOD PATTERN - Single Table Design:');
-        console.log('   GSI Names: EntityTypeIndex, DateIndex');
-        console.log('   Solution: Generic names hide implementation details');
-        console.log('   Maintenance: Easier to refactor and maintain');
+        console.log('   Solution: Using main table with PK=USER#userId and single query with OR + begins_with');
+        console.log('   PK: USER#userId (Partition Key) - groups all entities for a specific user');
+        console.log('   SK: #ENTITY#date (Sort Key) - filtered with OR + begins_with for all entity types');
+        console.log('   Cost: Single query with filter, no GSI needed - pure single table design!');
+        console.log('   Data: All entity types (posts, comments, followers, likes) retrieved in one query');
 
-        const goodResult = await this.singleTableDAO.getUserPostsWithGSI(testUserId);
+        const goodResult = await this.singleTableDAO.getUserScreenData(testUserId);
         console.log(`   Result: ${goodResult.duration}ms, RCU: ${goodResult.consumedCapacity?.readCapacityUnits || 'N/A'}, Data Points Fetched: ${goodResult.itemCount}`);
 
         this.printComparison(badResult, goodResult);
+
+        console.log('\n💡 Key Insight: Proper single table design demonstrates:');
+        console.log('   1. Single query using PK=USER#userId with OR + begins_with for all entity types');
+        console.log('   2. PK=USER#userId naturally groups all user entities together');
+        console.log('   3. SK=#ENTITY#date enables efficient filtering with begins_with and OR conditions');
+        console.log('   4. No GSI needed - main table handles all patterns in one query!');
     }
 
     // Point 5: Multiple Queries vs Single Query Efficiency
@@ -284,4 +298,4 @@ export class TestService {
             console.log('   ⚖️  Mixed results - depends on use case');
         }
     }
-} 
+}

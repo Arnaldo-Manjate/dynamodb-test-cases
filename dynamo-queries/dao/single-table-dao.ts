@@ -1,7 +1,22 @@
 import { BaseDAO, } from './base-dao';
-import { TestResult } from '../@types/index'
+import { TestResult, EntityType } from '../@types/index'
 import { QueryCommand, GetCommand, PutCommand, BatchWriteCommand } from '@aws-sdk/lib-dynamodb';
 
+/**
+ * Single Table Design DAO - Demonstrates Best Practices
+ * 
+ * DESIGN PHILOSOPHY: We design our access patterns for the most frequently accessed data.
+ * 
+ * This implementation shows how static identifiers on PK and SK enable powerful queries
+ * that are not possible with relational DBs, while maintaining individual access patterns
+ * for specific entity types. No LSI or GSI is needed for common access patterns.
+ * 
+ * Key Benefits:
+ * - Single query retrieves all user data (user, posts, comments, followers, likes)
+ * - Individual entity queries remain efficient using begins_with on SK
+ * - Static identifiers (USER#, POST#, COMMENT#, etc.) organize data logically
+ * - No index complexity for frequently accessed patterns
+ */
 export class SingleTableDAO extends BaseDAO {
     private tableName: string;
 
@@ -88,22 +103,172 @@ export class SingleTableDAO extends BaseDAO {
     async getUserPostsWithGSI(userId: string): Promise<TestResult> {
         return this.measureOperation(
             async () => {
-                // GOOD: Generic GSI name for infrequently accessed pattern
+                // GOOD: No GSI needed - can use main table efficiently
                 const command = new QueryCommand({
                     TableName: this.tableName,
-                    IndexName: 'EntityTypeIndex', // Generic name
-                    KeyConditionExpression: 'entityType = :entityType AND begins_with(SK, :skPrefix)',
-                    FilterExpression: 'begins_with(PK, :userPrefix)',
+                    KeyConditionExpression: 'PK = :pk AND begins_with(SK, :skPrefix)',
                     ExpressionAttributeValues: {
-                        ':entityType': 'POST',
-                        ':skPrefix': `POST#`,
-                        ':userPrefix': `USER#${userId}`
+                        ':pk': `USER#${userId}`,
+                        ':skPrefix': 'POST#'
                     },
                     ReturnConsumedCapacity: "TOTAL"
                 });
                 return await this.client.send(command);
             },
-            'GetUserPostsWithGSI_GenericNaming',
+            'GetUserPosts_NoGSINeeded',
+            'SingleTable',
+            1
+        );
+    }
+
+    // ========================================
+    // POINTS 3 & 4 MERGED: STATIC IDENTIFIERS + POWERFUL QUERIES
+    // Demonstrates: How static identifiers on PK and SK enable powerful queries
+    // Single query gets all user data while maintaining individual access patterns
+    // ========================================
+
+    // Point 3 & 4: Main Table for All User Data - Excellent Pattern
+    // Using main table with PK=USER#userId and SK begins_with to get all entity types in one query
+    // 
+    // Key Structure:
+    // - PK: USER#userId (Partition Key) - groups all entities for a specific user
+    // - SK: #ENTITY#date (Sort Key) - enables efficient queries and date-based ordering
+    //
+    // This demonstrates the power of proper single table design - no GSI needed!
+    async getUserScreenData(userId: string): Promise<TestResult> {
+        return this.measureOperation(
+            async () => {
+                // EXCELLENT: Single query using main table with PK=USER#userId
+                // This gets all entity types for a user in one efficient query
+                const command = new QueryCommand({
+                    TableName: this.tableName,
+                    KeyConditionExpression: 'PK = :pk',
+                    ExpressionAttributeValues: {
+                        ':pk': `USER#${userId}`
+                    },
+                    ReturnConsumedCapacity: "TOTAL"
+                });
+
+                const result = await this.client.send(command);
+
+                // Efficient: Loop once and push to right arrays
+                const posts: any[] = [];
+                const comments: any[] = [];
+                const followers: any[] = [];
+                const likes: any[] = [];
+
+                if (result.Items) {
+                    for (const item of result.Items) {
+                        switch (item.entityType) {
+                            case EntityType.POST:
+                                posts.push(item);
+                                break;
+                            case EntityType.COMMENT:
+                                comments.push(item);
+                                break;
+                            case EntityType.FOLLOWER:
+                                followers.push(item);
+                                break;
+                            case EntityType.LIKE:
+                                likes.push(item);
+                                break;
+                        }
+                    }
+                }
+
+                return {
+                    posts,
+                    comments,
+                    followers,
+                    likes,
+                    ConsumedCapacity: result.ConsumedCapacity,
+                    Items: result.Items || [],
+                    Count: result.Count || 0
+                };
+            },
+            'GetUserScreenData_MainTable_SingleQuery_WithFilter',
+            'SingleTable',
+            1
+        );
+    }
+
+    // Individual access patterns maintained for specific entity queries
+    // These demonstrate that we can still query individual entity types efficiently
+    async getUserPostsOnly(userId: string): Promise<TestResult> {
+        return this.measureOperation(
+            async () => {
+                // GOOD: Can still query just posts efficiently
+                const command = new QueryCommand({
+                    TableName: this.tableName,
+                    KeyConditionExpression: 'PK = :pk',
+                    ExpressionAttributeValues: {
+                        ':pk': `POST#${userId}`
+                    },
+                    ReturnConsumedCapacity: "TOTAL"
+                });
+                return await this.client.send(command);
+            },
+            'GetUserPostsOnly_IndividualAccess',
+            'SingleTable',
+            1
+        );
+    }
+
+    async getUserCommentsOnly(userId: string): Promise<TestResult> {
+        return this.measureOperation(
+            async () => {
+                // GOOD: Can still query just comments efficiently
+                const command = new QueryCommand({
+                    TableName: this.tableName,
+                    KeyConditionExpression: 'PK = :pk',
+                    ExpressionAttributeValues: {
+                        ':pk': `COMMENT#${userId}`
+                    },
+                    ReturnConsumedCapacity: "TOTAL"
+                });
+                return await this.client.send(command);
+            },
+            'GetUserCommentsOnly_IndividualAccess',
+            'SingleTable',
+            1
+        );
+    }
+
+    async getUserFollowersOnly(userId: string): Promise<TestResult> {
+        return this.measureOperation(
+            async () => {
+                // GOOD: Can still query just followers efficiently
+                const command = new QueryCommand({
+                    TableName: this.tableName,
+                    KeyConditionExpression: 'PK = :pk',
+                    ExpressionAttributeValues: {
+                        ':pk': `FOLLOWER#${userId}`
+                    },
+                    ReturnConsumedCapacity: "TOTAL"
+                });
+                return await this.client.send(command);
+            },
+            'GetUserFollowersOnly_IndividualAccess',
+            'SingleTable',
+            1
+        );
+    }
+
+    async getUserLikesOnly(userId: string): Promise<TestResult> {
+        return this.measureOperation(
+            async () => {
+                // GOOD: Can still query just likes efficiently
+                const command = new QueryCommand({
+                    TableName: this.tableName,
+                    KeyConditionExpression: 'PK = :pk',
+                    ExpressionAttributeValues: {
+                        ':pk': `LIKE#${userId}`
+                    },
+                    ReturnConsumedCapacity: "TOTAL"
+                });
+                return await this.client.send(command);
+            },
+            'GetUserLikesOnly_IndividualAccess',
             'SingleTable',
             1
         );
@@ -142,7 +307,7 @@ export class SingleTableDAO extends BaseDAO {
                     IndexName: 'EntityTypeIndex',
                     KeyConditionExpression: 'entityType = :entityType',
                     ExpressionAttributeValues: {
-                        ':entityType': 'POST'
+                        ':entityType': EntityType.POST
                     },
                     ReturnConsumedCapacity: "TOTAL"
                 });
