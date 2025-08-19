@@ -220,7 +220,7 @@ export abstract class BaseDAO {
 
                         totalCapacity += (result.ConsumedCapacity as any)?.CapacityUnits || 0;
 
-                        console.log(`✅ Batch ${Math.floor(i / BATCH_SIZE) + 1}: Processed ${batch.length} items successfully`);
+                        console.log(`✅Batch ${Math.floor(i / BATCH_SIZE) + 1}: Processed ${batch.length} items successfully`);
 
                     } catch (error) {
                         console.error(`❌ Batch ${Math.floor(i / BATCH_SIZE) + 1} failed:`, error);

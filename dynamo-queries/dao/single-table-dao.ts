@@ -40,7 +40,7 @@ export class SingleTableDAO extends BaseDAO {
                     KeyConditionExpression: 'PK = :pk AND begins_with(SK, :skPrefix)',
                     ExpressionAttributeValues: {
                         ':pk': `USER#${userId}`,
-                        ':skPrefix': 'POST#'
+                        ':skPrefix': 'POSTS#'
                     },
                     ReturnConsumedCapacity: "TOTAL"
                 });
@@ -274,27 +274,7 @@ export class SingleTableDAO extends BaseDAO {
         );
     }
 
-    // Point 5: Single Query Efficiency - Good Pattern
-    // Get user + posts in one efficient query
-    async getUserWithPosts(userId: string): Promise<TestResult> {
-        return this.measureOperation(
-            async () => {
-                // GOOD: Single query gets user + all their posts
-                const command = new QueryCommand({
-                    TableName: this.tableName,
-                    KeyConditionExpression: 'PK = :pk',
-                    ExpressionAttributeValues: {
-                        ':pk': `USER#${userId}`
-                    },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-                return await this.client.send(command);
-            },
-            'GetUserWithPosts_SingleQuery',
-            'SingleTable',
-            1
-        );
-    }
+
 
     // Point 6: Efficient Access Patterns - Good Pattern
     // Strategic GSI usage for global queries

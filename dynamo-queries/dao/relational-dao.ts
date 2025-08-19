@@ -134,47 +134,7 @@ export class RelationalDAO extends BaseDAO {
         );
     }
 
-    // Point 5: Multiple Queries - Bad Pattern
-    // Need multiple queries to get user + posts
-    async getUserWithPosts(userId: string): Promise<TestResult> {
-        return this.measureOperation(
-            async () => {
-                // BAD: Multiple queries needed
-                // 1. Get user
-                const userCommand = new GetCommand({
-                    TableName: this.usersTableName,
-                    Key: { PK: userId },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-                const user = await this.client.send(userCommand);
 
-                // 2. Get posts using GSI (since main table can't query by userId)
-                const postsCommand = new QueryCommand({
-                    TableName: this.postsTableName,
-                    IndexName: 'PostsByDateIndex',
-                    KeyConditionExpression: 'userId = :userId',
-                    ExpressionAttributeValues: { ':userId': userId },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-                const posts = await this.client.send(postsCommand);
-
-                // Return combined result with proper consumed capacity
-                return {
-                    user: user.Item,
-                    posts: posts.Items,
-                    ConsumedCapacity: {
-                        CapacityUnits: (user.ConsumedCapacity?.CapacityUnits || 0) +
-                            (posts.ConsumedCapacity?.CapacityUnits || 0)
-                    },
-                    Items: [user.Item, ...(posts.Items || [])], // Combine items for count
-                    Count: 1 + (posts.Count || 0) // User + posts count
-                };
-            },
-            'GetUserWithPosts_MultipleQueries',
-            'Relational',
-            1
-        );
-    }
 
     // Point 6: Inefficient Access Patterns - Bad Pattern
     // Scan operation due to poor schema design
@@ -225,17 +185,16 @@ export class RelationalDAO extends BaseDAO {
                 });
                 const posts = await this.client.send(postsCommand);
 
-                // 3. Get user comments (need to query by postId and filter by userId)
+                // 3. Get comments on user's posts (not comments by the user)
                 let allComments: any[] = [];
+                let commentsCapacity = 0;
                 if (posts.Items && posts.Items.length > 0) {
                     for (const post of posts.Items) {
                         const commentsCommand = new QueryCommand({
                             TableName: this.commentsTableName,
                             KeyConditionExpression: 'postId = :postId',
-                            FilterExpression: 'userId = :userId',
                             ExpressionAttributeValues: {
-                                ':postId': post.postId,
-                                ':userId': userId
+                                ':postId': post.postId
                             },
                             ReturnConsumedCapacity: "TOTAL"
                         });
@@ -243,6 +202,7 @@ export class RelationalDAO extends BaseDAO {
                         if (postComments.Items) {
                             allComments.push(...postComments.Items);
                         }
+                        commentsCapacity += postComments.ConsumedCapacity?.CapacityUnits || 0;
                     }
                 }
 
@@ -255,17 +215,16 @@ export class RelationalDAO extends BaseDAO {
                 });
                 const followers = await this.client.send(followersCommand);
 
-                // 5. Get user likes (need to query by postId and filter by userId)
+                // 5. Get likes on user's posts (not likes by the user)
                 let allLikes: any[] = [];
+                let likesCapacity = 0;
                 if (posts.Items && posts.Items.length > 0) {
                     for (const post of posts.Items) {
                         const likesCommand = new QueryCommand({
                             TableName: this.likesTableName,
                             KeyConditionExpression: 'postId = :postId',
-                            FilterExpression: 'userId = :userId',
                             ExpressionAttributeValues: {
-                                ':postId': post.postId,
-                                ':userId': userId
+                                ':postId': post.postId
                             },
                             ReturnConsumedCapacity: "TOTAL"
                         });
@@ -273,13 +232,16 @@ export class RelationalDAO extends BaseDAO {
                         if (postLikes.Items) {
                             allLikes.push(...postLikes.Items);
                         }
+                        likesCapacity += postLikes.ConsumedCapacity?.CapacityUnits || 0;
                     }
                 }
 
                 // Return combined result with proper consumed capacity
                 const totalCapacity = (user.ConsumedCapacity?.CapacityUnits || 0) +
                     (posts.ConsumedCapacity?.CapacityUnits || 0) +
-                    (followers.ConsumedCapacity?.CapacityUnits || 0);
+                    commentsCapacity +
+                    (followers.ConsumedCapacity?.CapacityUnits || 0) +
+                    likesCapacity;
 
                 return {
                     user: user.Item,
@@ -297,7 +259,7 @@ export class RelationalDAO extends BaseDAO {
                         ...(followers.Items || []),
                         ...allLikes
                     ],
-                    Count: 1 + (posts.Count || 0) + (allComments.length || 0) + (followers.Count || 0) + (allLikes.length || 0)
+                    Count: 1 + (posts.Count || 0) + allComments.length + (followers.Count || 0) + allLikes.length
                 };
             },
             'GetUserScreenData_MultipleRequests',

@@ -66,8 +66,8 @@ export class TestService {
             await this.testPoint1();
             await this.testPoint2();
             await this.testMergedPoints(); // Merged points 3 and 4
-            await this.testPoint5();
             await this.testPoint6();
+            // bONUS TEST LES SEE WHO PERFORMS BETTER AT GETTING ALL POST FOR ALL USERS BEING FOLLOWED.
 
             console.log('\n✅ All tests completed successfully!');
             console.log('📋 Check the output above to see the side-by-side comparison of each point.');
@@ -216,36 +216,6 @@ export class TestService {
         console.log('   2. PK=USER#userId naturally groups all user entities together');
         console.log('   3. SK=#ENTITY#date enables efficient filtering with begins_with and OR conditions');
         console.log('   4. No GSI needed - main table handles all patterns in one query!');
-    }
-
-    // Point 5: Multiple Queries vs Single Query Efficiency
-    private async testPoint5(): Promise<void> {
-        console.log('\n🔍 Point 5: Multiple Queries vs Single Query Efficiency');
-        console.log('='.repeat(60));
-
-        const testUserId = 'user-00001';
-
-        // Bad Pattern: Multiple queries required
-        console.log('\n❌ BAD PATTERN - Relational Design:');
-        console.log('   Problem: Need multiple queries to get user + posts');
-        console.log('   Queries: 1 for user + 1 for posts');
-        console.log('   Cost: Higher latency, more RCU consumption');
-        console.log('   Data: User (1 item) + Posts (multiple items)');
-
-        const badResult = await this.relationalDAO.getUserWithPosts(testUserId);
-        console.log(`   Result: ${badResult.duration}ms, RCU: ${badResult.consumedCapacity?.readCapacityUnits || 'N/A'}, Data Points Fetched: ${badResult.itemCount}`);
-
-        // Good Pattern: Single efficient query
-        console.log('\n✅ GOOD PATTERN - Single Table Design:');
-        console.log('   Solution: Single query gets user + all posts');
-        console.log('   Queries: 1 total');
-        console.log('   Cost: Lower latency, less RCU consumption');
-        console.log('   Data: User + Posts in single result set');
-
-        const goodResult = await this.singleTableDAO.getUserWithPosts(testUserId);
-        console.log(`   Result: ${goodResult.duration}ms, RCU: ${goodResult.consumedCapacity?.readCapacityUnits || 'N/A'}, Data Points Fetched: ${goodResult.itemCount}`);
-
-        this.printComparison(badResult, goodResult);
     }
 
     // Point 6: Inefficient Access Patterns vs Strategic Design
