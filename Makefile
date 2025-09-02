@@ -30,6 +30,10 @@ query-tables:
 demo:
 	cd dynamo-queries && AWS_REGION=$(AWS_REGION) pnpm start -- --user-count $(USER_COUNT) --post-count $(POST_COUNT) --comment-count $(COMMENT_COUNT) --like-count $(LIKE_COUNT)
 
+# Clear all data from both single table and relational tables
+clear-tables:
+	cd dynamo-queries && AWS_REGION=$(AWS_REGION) pnpm start -- --clear-all-data
+
 # Clean up generated files
 clean:
 	rm -f dynamo-queries/dist/*

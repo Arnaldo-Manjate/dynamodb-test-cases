@@ -41,6 +41,14 @@ export interface RelationalFollower {
     createdAt: string;
 }
 
+export interface RelationalUserFollowing {
+    followId: string;
+    id: string;
+    followerId: string;
+    followingId: string;
+    createdAt: string;
+}
+
 export interface RelationalLike {
     likeId: string;
     id: string;
@@ -81,6 +89,8 @@ export interface SingleTableComment {
     content: string;
     createdAt: string;
     datePrefix: string;
+    GSI1PK?: string; // USER_COMMENTS#<userId> - for getting all user comments
+    GSI1SK?: string; // <createdAt> - for sorting comments by date
 }
 
 export interface SingleTableFollower {
@@ -125,6 +135,7 @@ export interface RelationalTestData {
     posts: RelationalPost[];
     comments: RelationalComment[];
     followers: RelationalFollower[];
+    userFollowings: RelationalUserFollowing[];
     likes: RelationalLike[];
 }
 

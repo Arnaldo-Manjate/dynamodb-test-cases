@@ -29,6 +29,10 @@ export class SingleTableDAO extends BaseDAO {
         return 'SingleTable';
     }
 
+    // Getter methods for table name and client access
+    get getTableName(): string { return this.tableName; }
+    get getClient() { return this.client; }
+
     // Point 1: Proper Sort Keys - Good Pattern
     // Efficient queries with PK + SK combination
     async getUserPosts(userId: string): Promise<TestResult> {
@@ -276,7 +280,7 @@ export class SingleTableDAO extends BaseDAO {
 
 
 
-    // Point 6: Efficient Access Patterns - Good Pattern
+    // Efficient Access Patterns - Good Pattern
     // Strategic GSI usage for global queries
     async getAllPosts(): Promise<TestResult> {
         return this.measureOperation(
@@ -298,6 +302,8 @@ export class SingleTableDAO extends BaseDAO {
             1
         );
     }
+
+
 
     // Data insertion methods
     async createUser(user: any): Promise<TestResult> {
@@ -334,5 +340,28 @@ export class SingleTableDAO extends BaseDAO {
 
     async batchCreateItems(items: any[]): Promise<TestResult> {
         return this.batchWriteWithChunking(items, this.tableName, 'BatchCreateItems');
+    }
+
+    // Point 6: GSI Overloading for Infrequent Access Patterns
+    // Using GSI1 to efficiently get all comments by a user across all posts
+    async getAllUserComments(userId: string): Promise<TestResult> {
+        return this.measureOperation(
+            async () => {
+                // GOOD: Using overloaded GSI1 for infrequent access pattern
+                const command = new QueryCommand({
+                    TableName: this.tableName,
+                    IndexName: 'GSI1',
+                    KeyConditionExpression: 'GSI1PK = :gsi1pk',
+                    ExpressionAttributeValues: {
+                        ':gsi1pk': `USER_COMMENTS#${userId}`
+                    },
+                    ReturnConsumedCapacity: "TOTAL"
+                });
+                return await this.client.send(command);
+            },
+            'GetAllUserComments_GSI1',
+            'SingleTable',
+            1
+        );
     }
 } 

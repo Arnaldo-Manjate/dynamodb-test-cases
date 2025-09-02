@@ -12,6 +12,20 @@ async function main() {
         likeCount: 100
     };
 
+    // Check for clear-all-data flag first
+    if (args.includes('--clear-all-data')) {
+        console.log('🗑️  Clearing all data from DynamoDB tables...');
+        try {
+            const testService = new TestService();
+            await testService.clearAllData();
+            console.log('✅ All data cleared successfully!');
+            return;
+        } catch (error) {
+            console.error('❌ Failed to clear data:', error);
+            return;
+        }
+    }
+
     // Override defaults with command line arguments
     for (let i = 0; i < args.length; i++) {
         const arg = args[i];

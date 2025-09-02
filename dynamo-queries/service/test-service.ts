@@ -2,6 +2,7 @@ import { RelationalDAO } from '../dao/relational-dao';
 import { SingleTableDAO } from '../dao/single-table-dao';
 import { DataGenerator } from './data-generator';
 import { TestResult, CompleteTestData } from '../@types';
+import { ScanCommand, BatchWriteCommand } from '@aws-sdk/lib-dynamodb';
 
 export class TestService {
     private relationalDAO: RelationalDAO;
@@ -13,6 +14,7 @@ export class TestService {
             'posts-relational',
             'comments-relational',
             'followers-relational',
+            'user-following-relational',
             'likes-relational',
             region
         );
@@ -48,6 +50,7 @@ export class TestService {
                     console.log(`   - Relational Posts: ${testData.relational.posts.length}`);
                     console.log(`   - Relational Comments: ${testData.relational.comments.length}`);
                     console.log(`   - Relational Followers: ${testData.relational.followers.length}`);
+                    console.log(`   - Relational User-Following: ${testData.relational.userFollowings.length}`);
                     console.log(`   - Relational Likes: ${testData.relational.likes.length}`);
                     console.log(`   - Single Table Users: ${testData.singleTable.users.length}`);
                     console.log(`   - Single Table Posts: ${testData.singleTable.posts.length}`);
@@ -66,8 +69,8 @@ export class TestService {
             await this.testPoint1();
             await this.testPoint2();
             await this.testMergedPoints(); // Merged points 3 and 4
+            await this.testPoint5();
             await this.testPoint6();
-            // bONUS TEST LES SEE WHO PERFORMS BETTER AT GETTING ALL POST FOR ALL USERS BEING FOLLOWED.
 
             console.log('\n✅ All tests completed successfully!');
             console.log('📋 Check the output above to see the side-by-side comparison of each point.');
@@ -80,6 +83,128 @@ export class TestService {
 
         } catch (error) {
             console.error('❌ Test execution failed:', error);
+            throw error;
+        }
+    }
+
+    // ========================================
+    // DATA CLEARING FUNCTIONALITY
+    // ========================================
+
+    // Clear all data from both single table and relational tables
+    async clearAllData(): Promise<void> {
+        console.log('🗑️  Starting data clearing process...');
+
+        try {
+            // Clear relational tables
+            console.log('  - Clearing relational tables...');
+            await this.clearRelationalTables();
+
+            // Clear single table
+            console.log('  - Clearing single table...');
+            await this.clearSingleTable();
+
+            console.log('✅ All tables cleared successfully!');
+        } catch (error) {
+            console.error('❌ Error clearing data:', error);
+            throw error;
+        }
+    }
+
+    private async clearRelationalTables(): Promise<void> {
+        const tables = [
+            this.relationalDAO.getUsersTableName,
+            this.relationalDAO.getPostsTableName,
+            this.relationalDAO.getCommentsTableName,
+            this.relationalDAO.getFollowersTableName,
+            this.relationalDAO.getUserFollowingTableName,
+            this.relationalDAO.getLikesTableName
+        ];
+
+        for (const tableName of tables) {
+            console.log(`    - Clearing table: ${tableName}`);
+            await this.clearTable(tableName);
+        }
+    }
+
+    private async clearSingleTable(): Promise<void> {
+        console.log(`    - Clearing table: ${this.singleTableDAO.getTableName}`);
+        await this.clearTable(this.singleTableDAO.getTableName);
+    }
+
+    private async clearTable(tableName: string): Promise<void> {
+        try {
+            // Scan the table to get all items
+            // Get the key schema based on the table name
+            let keyAttributes: string[];
+            switch (tableName) {
+                case 'users-relational':
+                    keyAttributes = ['PK'];
+                    break;
+                case 'posts-relational':
+                    keyAttributes = ['postId'];
+                    break;
+                case 'comments-relational':
+                    keyAttributes = ['postId', 'commentId'];
+                    break;
+                case 'followers-relational':
+                    keyAttributes = ['followingId', 'followerId'];
+                    break;
+                case 'user-following-relational':
+                    keyAttributes = ['followerId', 'followingId'];
+                    break;
+                case 'likes-relational':
+                    keyAttributes = ['postId', 'likeId'];
+                    break;
+                case 'single-table-social':
+                    keyAttributes = ['PK', 'SK'];
+                    break;
+                default:
+                    throw new Error(`Unknown table: ${tableName}`);
+            }
+
+            const scanCommand = new ScanCommand({
+                TableName: tableName,
+                ProjectionExpression: keyAttributes.join(', ')
+            });
+
+            const result = await this.relationalDAO.getClient.send(scanCommand);
+
+            if (result.Items && result.Items.length > 0) {
+                console.log(`      - Found ${result.Items.length} items to delete`);
+
+                // Delete items in batches of 25 (DynamoDB limit)
+                const batchSize = 25;
+                for (let i = 0; i < result.Items.length; i += batchSize) {
+                    const batch = result.Items.slice(i, i + batchSize);
+
+                    const deleteRequests = batch.map(item => {
+                        // Create key based on table schema
+                        const key: any = {};
+                        keyAttributes.forEach(attr => {
+                            key[attr] = item[attr];
+                        });
+
+                        return {
+                            DeleteRequest: { Key: key }
+                        };
+                    });
+
+                    const batchDeleteCommand = new BatchWriteCommand({
+                        RequestItems: {
+                            [tableName]: deleteRequests
+                        }
+                    });
+
+                    await this.relationalDAO.getClient.send(batchDeleteCommand);
+                }
+
+                console.log(`      - Deleted ${result.Items.length} items`);
+            } else {
+                console.log(`      - Table is already empty`);
+            }
+        } catch (error) {
+            console.error(`      - Error clearing table ${tableName}:`, error);
             throw error;
         }
     }
@@ -104,6 +229,10 @@ export class TestService {
         console.log('  - Inserting followers...');
         await this.relationalDAO.batchCreateFollowers(testData.relational.followers);
         await this.singleTableDAO.batchCreateItems(testData.singleTable.followers);
+
+        // Insert user-following relationships
+        console.log('  - Inserting user-following relationships...');
+        await this.relationalDAO.batchCreateUserFollowing(testData.relational.userFollowings);
 
         // Insert likes
         console.log('  - Inserting likes...');
@@ -218,9 +347,9 @@ export class TestService {
         console.log('   4. No GSI needed - main table handles all patterns in one query!');
     }
 
-    // Point 6: Inefficient Access Patterns vs Strategic Design
-    private async testPoint6(): Promise<void> {
-        console.log('\n🔍 Point 6: Inefficient Access Patterns vs Strategic Design');
+    // Point 5: Inefficient Access Patterns vs Strategic Design
+    private async testPoint5(): Promise<void> {
+        console.log('\n🔍 Point 5: Inefficient Access Patterns vs Strategic Design');
         console.log('='.repeat(60));
 
         // Bad Pattern: Scan operation required
@@ -241,9 +370,49 @@ export class TestService {
         console.log('   Data: Direct query for all POST entities');
 
         const goodResult = await this.singleTableDAO.getAllPosts();
+        console.log(`   Result: ${badResult.duration}ms, RCU: ${badResult.consumedCapacity?.readCapacityUnits || 'N/A'}, Data Points Fetched: ${goodResult.itemCount}`);
+
+        this.printComparison(badResult, goodResult);
+    }
+
+
+
+    // Point 6: GSI Overloading vs Multiple Queries
+    // Demonstrates: How GSI overloading in single table design can efficiently handle infrequent access patterns
+    // while relational design requires multiple queries even with GSIs
+    private async testPoint6(): Promise<void> {
+        console.log('\n🔍 Point 6: GSI Overloading vs Multiple Queries');
+        console.log('='.repeat(60));
+
+        const testUserId = 'user-00001';
+
+        // Bad Pattern: Relational (multiple queries required)
+        console.log('\n❌ BAD PATTERN - Relational Design:');
+        console.log('   Problem: Need multiple queries to get all comments by a user');
+        console.log('   1. First query: Get all posts by user (using GSI)');
+        console.log('   2. Then: Query each post for comments (N+1 problem)');
+        console.log('   Cost: High latency, multiple network requests, high RCU consumption');
+
+        const badResult = await this.relationalDAO.getAllUserComments(testUserId);
+        console.log(`   Result: ${badResult.duration}ms, RCU: ${badResult.consumedCapacity?.readCapacityUnits || 'N/A'}, Data Points Fetched: ${badResult.itemCount}`);
+
+        // Good Pattern: Single Table (GSI overloading)
+        console.log('\n✅ GOOD PATTERN - Single Table Design:');
+        console.log('   Solution: Overload GSI1 for infrequently accessed data');
+        console.log('   GSI1PK: USER_COMMENTS#userId - groups all comments by user');
+        console.log('   GSI1SK: createdAt - enables date-based sorting');
+        console.log('   Cost: Single query, efficient for infrequent access');
+
+        const goodResult = await this.singleTableDAO.getAllUserComments(testUserId);
         console.log(`   Result: ${goodResult.duration}ms, RCU: ${goodResult.consumedCapacity?.readCapacityUnits || 'N/A'}, Data Points Fetched: ${goodResult.itemCount}`);
 
         this.printComparison(badResult, goodResult);
+
+        console.log('\n💡 Key Insight: GSI Overloading in Single Table Design');
+        console.log('   1. Use GSIs for infrequently accessed data patterns');
+        console.log('   2. One GSI can serve multiple access patterns through key overloading');
+        console.log('   3. Avoid GSIs for frequently accessed data (use main table)');
+        console.log('   4. Even with GSIs, relational design often requires multiple queries');
     }
 
     private printComparison(badResult: TestResult, goodResult: TestResult): void {
@@ -265,7 +434,7 @@ export class TestService {
         } else if (latencyDiff > 0 && rcuDiff > 0) {
             console.log('   ⚠️  Relational Design is BETTER (unexpected!)');
         } else {
-            console.log('   ⚖️  Mixed results - depends on use case');
+            console.log(' Mixed results - depends on use case');
         }
     }
 }

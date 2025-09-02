@@ -24,20 +24,31 @@ export class RelationalDAO extends BaseDAO {
     private postsTableName: string;
     private commentsTableName: string;
     private followersTableName: string;
+    private userFollowingTableName: string;
     private likesTableName: string;
 
-    constructor(usersTableName: string, postsTableName: string, commentsTableName: string, followersTableName: string, likesTableName: string, region: string = 'us-east-1') {
+    constructor(usersTableName: string, postsTableName: string, commentsTableName: string, followersTableName: string, userFollowingTableName: string, likesTableName: string, region: string = 'us-east-1') {
         super(region);
         this.usersTableName = usersTableName;
         this.postsTableName = postsTableName;
         this.commentsTableName = commentsTableName;
         this.followersTableName = followersTableName;
+        this.userFollowingTableName = userFollowingTableName;
         this.likesTableName = likesTableName;
     }
 
     protected getDesignType(): 'Relational' {
         return 'Relational';
     }
+
+    // Getter methods for table names and client access
+    get getUsersTableName(): string { return this.usersTableName; }
+    get getPostsTableName(): string { return this.postsTableName; }
+    get getCommentsTableName(): string { return this.commentsTableName; }
+    get getFollowersTableName(): string { return this.followersTableName; }
+    get getUserFollowingTableName(): string { return this.userFollowingTableName; }
+    get getLikesTableName(): string { return this.likesTableName; }
+    get getClient() { return this.client; }
 
     // Point 1: Missing Sort Keys - Bad Pattern
     // This forces GSI creation for date-based queries
@@ -136,7 +147,7 @@ export class RelationalDAO extends BaseDAO {
 
 
 
-    // Point 6: Inefficient Access Patterns - Bad Pattern
+    // Inefficient Access Patterns - Bad Pattern
     // Scan operation due to poor schema design
     async getAllPosts(): Promise<TestResult> {
         return this.measureOperation(
@@ -153,6 +164,8 @@ export class RelationalDAO extends BaseDAO {
             1
         );
     }
+
+
 
     // ========================================
     // POINTS 3 & 4 MERGED: MULTIPLE REQUESTS VS SINGLE QUERY
@@ -317,7 +330,63 @@ export class RelationalDAO extends BaseDAO {
         return this.batchWriteWithChunking(followers, this.followersTableName, 'BatchCreateFollowers');
     }
 
+    async batchCreateUserFollowing(userFollowings: any[]): Promise<TestResult> {
+        return this.batchWriteWithChunking(userFollowings, this.userFollowingTableName, 'BatchCreateUserFollowing');
+    }
+
     async batchCreateLikes(likes: any[]): Promise<TestResult> {
         return this.batchWriteWithChunking(likes, this.likesTableName, 'BatchCreateLikes');
+    }
+
+    // Point 6: Multiple Queries Required - Bad Pattern
+    // Need to first get all posts by user, then query each post for comments
+    async getAllUserComments(userId: string): Promise<TestResult> {
+        return this.measureOperation(
+            async () => {
+                // BAD: Multiple network requests required
+                // 1. First get all posts by the user
+                const postsCommand = new QueryCommand({
+                    TableName: this.postsTableName,
+                    IndexName: 'PostsByDateIndex',
+                    KeyConditionExpression: 'userId = :userId',
+                    ExpressionAttributeValues: { ':userId': userId },
+                    ReturnConsumedCapacity: "TOTAL"
+                });
+                const posts = await this.client.send(postsCommand);
+
+                // 2. Then get comments for each post
+                let allComments: any[] = [];
+                let totalCapacity = posts.ConsumedCapacity?.CapacityUnits || 0;
+
+                if (posts.Items && posts.Items.length > 0) {
+                    for (const post of posts.Items) {
+                        const commentsCommand = new QueryCommand({
+                            TableName: this.commentsTableName,
+                            KeyConditionExpression: 'postId = :postId',
+                            ExpressionAttributeValues: {
+                                ':postId': post.postId
+                            },
+                            ReturnConsumedCapacity: "TOTAL"
+                        });
+                        const postComments = await this.client.send(commentsCommand);
+                        if (postComments.Items) {
+                            allComments.push(...postComments.Items);
+                        }
+                        totalCapacity += postComments.ConsumedCapacity?.CapacityUnits || 0;
+                    }
+                }
+
+                return {
+                    Items: allComments,
+                    Count: allComments.length,
+                    ConsumedCapacity: {
+                        CapacityUnits: totalCapacity
+                    }
+                };
+            },
+            'GetAllUserComments_MultipleQueries',
+            'Relational',
+            1
+        );
     }
 } 
