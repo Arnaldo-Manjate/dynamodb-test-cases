@@ -125,8 +125,15 @@ export interface TestResult {
         writeCapacityUnits?: number;
     };
     itemCount: number; // Actual number of items returned/fetched from DynamoDB
+    requestCount?: number; // Number of DynamoDB requests made
     success: boolean;
     error?: string;
+    // For getUserScreenData results
+    user?: any;
+    posts?: any[];
+    comments?: any[];
+    followers?: any[];
+    likes?: any[];
 }
 
 // Data Generation Result Types

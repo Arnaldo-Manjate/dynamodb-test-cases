@@ -14,12 +14,23 @@ export abstract class BaseDAO {
         this.client = DynamoDBDocumentClient.from(this.dynamoClient);
     }
 
+    protected requestCount: number = 0;
+
+    protected incrementRequestCount(): void {
+        this.requestCount++;
+    }
+
+    protected resetRequestCount(): void {
+        this.requestCount = 0;
+    }
+
     protected async measureOperation<T>(
         operation: () => Promise<T>,
         operationName: string,
         design: 'Relational' | 'SingleTable',
         itemCount: number = 1
     ): Promise<TestResult> {
+        this.resetRequestCount();
         const startTime = Date.now();
 
         try {
@@ -57,6 +68,7 @@ export abstract class BaseDAO {
                 duration,
                 consumedCapacity,
                 itemCount: actualItemCount, // Use actual count, not requested count
+                requestCount: (result as any)?.requestCount || this.requestCount,
                 success: true
             };
         } catch (error) {
@@ -66,6 +78,7 @@ export abstract class BaseDAO {
                 design,
                 duration,
                 itemCount: 0,
+                requestCount: this.requestCount,
                 success: false,
                 error: error instanceof Error ? error.message : 'Unknown error'
             };
@@ -82,6 +95,7 @@ export abstract class BaseDAO {
                         ReturnConsumedCapacity: "TOTAL"
                     });
                     const result = await this.client.send(command);
+                    this.incrementRequestCount();
                     console.log(`✅ PutItem successful for table ${tableName}, item:`, item);
                     return result;
                 } catch (error) {
@@ -208,6 +222,7 @@ export abstract class BaseDAO {
                             ReturnConsumedCapacity: "TOTAL"
                         });
 
+                        this.incrementRequestCount();
                         const result = await this.client.send(command);
 
                         // Check for unprocessed items (partial failures)
@@ -257,4 +272,8 @@ export abstract class BaseDAO {
     }
 
     protected abstract getDesignType(): 'Relational' | 'SingleTable';
+
+    protected log(message: string): void {
+        console.log(message);
+    }
 } 

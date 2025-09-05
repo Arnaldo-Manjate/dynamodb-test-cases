@@ -187,7 +187,8 @@ export class SingleTableDAO extends BaseDAO {
                     likes,
                     ConsumedCapacity: result.ConsumedCapacity,
                     Items: result.Items || [],
-                    Count: result.Count || 0
+                    Count: result.Count || 0,
+                    requestCount: 1 // Single query gets all data
                 };
             },
             'GetUserScreenData_MainTable_SingleQuery_WithFilter',

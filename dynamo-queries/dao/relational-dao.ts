@@ -55,10 +55,10 @@ export class RelationalDAO extends BaseDAO {
     async getUserPosts(userId: string): Promise<TestResult> {
         return this.measureOperation(
             async () => {
-                // BAD: PK is postId, not userId, so we can't query by userId efficiently
-                // We have to scan the entire table to find posts by a specific user
-                console.log(`   🔍 Scanning posts table for userId: ${userId}`);
+                // BAD: Main table's PK is postId, so we need a GSI to query by userId
+                // This means maintaining an extra index just for this access pattern
 
+                // BAD: Have to scan because we can't query by non-key attribute
                 const command = new ScanCommand({
                     TableName: this.postsTableName,
                     FilterExpression: 'userId = :userId',
@@ -67,8 +67,6 @@ export class RelationalDAO extends BaseDAO {
                 });
 
                 const result = await this.client.send(command);
-                console.log(`   📊 Scan result: ${result.Items?.length || 0} items found, ScannedCount: ${result.ScannedCount}`);
-
                 return result;
             },
             'GetUserPosts_NoSortKey',
@@ -179,6 +177,7 @@ export class RelationalDAO extends BaseDAO {
     async getUserScreenData(userId: string): Promise<TestResult> {
         return this.measureOperation(
             async () => {
+                let requestCount = 0;
                 // BAD: Multiple network requests required for relational design
                 // 1. Get user
                 const userCommand = new GetCommand({
@@ -187,7 +186,7 @@ export class RelationalDAO extends BaseDAO {
                     ReturnConsumedCapacity: "TOTAL"
                 });
                 const user = await this.client.send(userCommand);
-
+                requestCount++;
                 // 2. Get user posts (requires GSI since main table has postId as PK)
                 const postsCommand = new QueryCommand({
                     TableName: this.postsTableName,
@@ -197,7 +196,7 @@ export class RelationalDAO extends BaseDAO {
                     ReturnConsumedCapacity: "TOTAL"
                 });
                 const posts = await this.client.send(postsCommand);
-
+                requestCount++;
                 // 3. Get comments on user's posts (not comments by the user)
                 let allComments: any[] = [];
                 let commentsCapacity = 0;
@@ -211,10 +210,12 @@ export class RelationalDAO extends BaseDAO {
                             },
                             ReturnConsumedCapacity: "TOTAL"
                         });
+                        requestCount++;
                         const postComments = await this.client.send(commentsCommand);
                         if (postComments.Items) {
                             allComments.push(...postComments.Items);
                         }
+                        requestCount++;
                         commentsCapacity += postComments.ConsumedCapacity?.CapacityUnits || 0;
                     }
                 }
@@ -227,7 +228,7 @@ export class RelationalDAO extends BaseDAO {
                     ReturnConsumedCapacity: "TOTAL"
                 });
                 const followers = await this.client.send(followersCommand);
-
+                requestCount++;
                 // 5. Get likes on user's posts (not likes by the user)
                 let allLikes: any[] = [];
                 let likesCapacity = 0;
@@ -242,6 +243,7 @@ export class RelationalDAO extends BaseDAO {
                             ReturnConsumedCapacity: "TOTAL"
                         });
                         const postLikes = await this.client.send(likesCommand);
+                        requestCount++;
                         if (postLikes.Items) {
                             allLikes.push(...postLikes.Items);
                         }
@@ -255,6 +257,9 @@ export class RelationalDAO extends BaseDAO {
                     commentsCapacity +
                     (followers.ConsumedCapacity?.CapacityUnits || 0) +
                     likesCapacity;
+
+                // Request count is tracked by incrementRequestCount() in base DAO
+                // Each call to client.send() increments the counter
 
                 return {
                     user: user.Item,
@@ -272,7 +277,8 @@ export class RelationalDAO extends BaseDAO {
                         ...(followers.Items || []),
                         ...allLikes
                     ],
-                    Count: 1 + (posts.Count || 0) + allComments.length + (followers.Count || 0) + allLikes.length
+                    Count: 1 + (posts.Count || 0) + allComments.length + (followers.Count || 0) + allLikes.length,
+                    requestCount: requestCount
                 };
             },
             'GetUserScreenData_MultipleRequests',
