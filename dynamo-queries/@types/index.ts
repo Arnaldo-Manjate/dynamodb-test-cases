@@ -9,7 +9,7 @@ export enum EntityType {
 
 // Relational Design Types
 export interface RelationalUser {
-    PK: string; // userId
+    userId: string; // userId
     id: string;
     email: string;
     username: string;
@@ -29,6 +29,7 @@ export interface RelationalComment {
     id: string;
     userId: string;
     postId: string;
+    postAuthorUserId: string; // For GSI: allows querying comments by post author
     content: string;
     createdAt: string;
 }
@@ -54,6 +55,7 @@ export interface RelationalLike {
     id: string;
     userId: string;
     postId: string;
+    postAuthorUserId: string; // For GSI: allows querying likes by post author
     createdAt: string;
 }
 

@@ -9,7 +9,8 @@ async function main() {
         userCount: 5,
         postCount: 20,
         commentCount: 50,
-        likeCount: 100
+        likeCount: 100,
+        skipDataInsertion: false
     };
 
     // Check for clear-all-data flag first
@@ -46,6 +47,10 @@ async function main() {
                 config.likeCount = parseInt(args[i + 1]);
                 i++; // Skip the value on next iteration
                 break;
+            case '--skip-data-insertion':
+                config.skipDataInsertion = args[i + 1] === 'true';
+                i++; // Skip the value on next iteration
+                break;
         }
     }
 
@@ -55,7 +60,7 @@ async function main() {
 
     try {
         const testService = new TestService();
-        await testService.runAllTests(config.userCount, config.postCount, config.commentCount, config.likeCount);
+        await testService.runAllTests(config.userCount, config.postCount, config.commentCount, config.likeCount, config.skipDataInsertion);
     } catch (error) {
         console.error(error);
     }

@@ -289,10 +289,10 @@ export class SingleTableDAO extends BaseDAO {
                 // GOOD: Efficient GSI query instead of scan
                 const command = new QueryCommand({
                     TableName: this.tableName,
-                    IndexName: 'EntityTypeIndex',
-                    KeyConditionExpression: 'entityType = :entityType',
+                    IndexName: 'GSI1',
+                    KeyConditionExpression: 'GSI1PK = :pk',
                     ExpressionAttributeValues: {
-                        ':entityType': EntityType.POST
+                        ':pk': `${EntityType.POST}`
                     },
                     ReturnConsumedCapacity: "TOTAL"
                 });

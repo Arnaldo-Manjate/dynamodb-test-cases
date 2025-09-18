@@ -51,17 +51,15 @@ export class TestService {
                 }
             }
 
-            // Run all tests
-            await this.testPoint1(); // Static Identifiers and Network Requests
-            await this.testPoint2(); // Inefficient Access Patterns
-            await this.testPoint3(); // GSI Overloading
+            await this.testPoint1();
+            await this.testPoint2();
+            await this.testPoint3();
 
             // Generate and save report
             await this.generateAndSaveReport();
 
             this.log('\n✅ All tests completed successfully!');
             this.log('📋 Check the generated report for detailed results and analysis.');
-
         } catch (error) {
             this.log('❌ Test execution failed: ' + error);
             throw error;
@@ -120,7 +118,7 @@ export class TestService {
             let keyAttributes: string[];
             switch (tableName) {
                 case 'users-relational':
-                    keyAttributes = ['PK'];
+                    keyAttributes = ['userId'];
                     break;
                 case 'posts-relational':
                     keyAttributes = ['postId'];
@@ -246,34 +244,20 @@ export class TestService {
 
         const testUserId = 'user-00001';
 
-        // Relational Design Implementation
-        this.log('\n## Relational Design');
-        this.log('How it works:');
-        this.log('• Stores different types of data (users, posts, comments) in separate tables');
-        this.log('• To get a user\'s complete data, needs to:');
-        this.log('  1. Look up the user');
-        this.log('  2. Find their posts');
-        this.log('  3. Find comments on each post');
-        this.log('  4. Find their followers');
-        this.log('  5. Find likes on each post');
-        this.log('• Each lookup is a separate request to the database');
-        this.log('• The more posts a user has, the more lookups needed');
-
         const relationalResult = await this.relationalDAO.getUserScreenData(testUserId);
-        this.log(`Result: ${relationalResult.duration}ms, RCU: ${relationalResult.consumedCapacity?.readCapacityUnits || 'N/A'}, Data Points Fetched: ${relationalResult.itemCount}`);
-
-        // Single Table Design Implementation
-        this.log('\n## Single Table Design');
-        this.log('Implementation: One table with composite keys');
-        this.log('Query Pattern: Single query using partition and sort keys');
-        this.log('Key Structure:');
-        this.log('  • PK: USER#userId - Partition key groups user data');
-        this.log('  • SK: #ENTITY#date - Sort key enables filtering by type');
-        this.log('Data Structure: Co-located entities in single table');
-        this.log('Access Pattern: One query retrieves all related data');
-
         const singleTableResult = await this.singleTableDAO.getUserScreenData(testUserId);
-        this.log(`Result: ${singleTableResult.duration}ms, RCU: ${singleTableResult.consumedCapacity?.readCapacityUnits || 'N/A'}, Data Points Fetched: ${singleTableResult.itemCount}`);
+
+        // Comparison Table
+        this.log('\n## Design Comparison: Static Identifiers vs Multiple Network Requests\n');
+        this.log('| Aspect | Relational Design | Single Table Design |');
+        this.log('|--------|-------------------|----------------------|');
+        this.log('| **Data Storage** | Multiple tables (users, posts, comments, followers, likes) | Single table with composite keys |');
+        this.log('| **Access Pattern** | 5+ separate queries (user + posts + comments + followers + likes) | Single query with PK/SK filtering |');
+        this.log('| **Key Structure** | Simple primary keys per table | PK: `USER#userId`, SK: `#ENTITY#date` |');
+        this.log('| **Data Location** | Distributed across tables | Co-located by partition key |');
+        this.log('| **Query Complexity** | Multiple round trips | Single efficient query |');
+        this.log('| **Scalability** | Degrades with more posts (N+1 queries) | Consistent performance |');
+        this.log('| **Performance** | ' + `${relationalResult.duration}ms, ${relationalResult.consumedCapacity?.readCapacityUnits || 'N/A'} RCU` + ' | ' + `${singleTableResult.duration}ms, ${singleTableResult.consumedCapacity?.readCapacityUnits || 'N/A'} RCU` + ' |');
 
         this.printComparison(relationalResult, singleTableResult);
     }
@@ -283,25 +267,19 @@ export class TestService {
         this.log('\n🔍 Point 2: Inefficient Access Patterns vs Strategic Design');
         this.log('='.repeat(60));
 
-        // Bad Pattern: Scan operation required
-        this.log('\n❌ BAD PATTERN - Relational Design:');
-        this.log('   Problem: No efficient access pattern for global queries');
-        this.log('   Solution: Scan operation (expensive)');
-        this.log('   Cost: High RCU consumption, slow performance');
-        this.log('   Data: Scans entire table to find all posts');
-
         const badResult = await this.relationalDAO.getAllPosts();
-        this.log(`   Result: ${badResult.duration}ms, RCU: ${badResult.consumedCapacity?.readCapacityUnits || 'N/A'}, Data Points Fetched: ${badResult.itemCount}`);
-
-        // Good Pattern: Strategic GSI usage
-        this.log('\n✅ GOOD PATTERN - Single Table Design:');
-        this.log('   Solution: Strategic GSI for global queries');
-        this.log('   Access: Efficient query on EntityTypeIndex');
-        this.log('   Cost: Lower RCU consumption, faster performance');
-        this.log('   Data: Direct query for all POST entities');
-
         const goodResult = await this.singleTableDAO.getAllPosts();
-        this.log(`   Result: ${badResult.duration}ms, RCU: ${badResult.consumedCapacity?.readCapacityUnits || 'N/A'}, Data Points Fetched: ${goodResult.itemCount}`);
+
+        // Comparison Table
+        this.log('\n## Design Comparison: Inefficient Access Patterns vs Strategic Design\n');
+        this.log('| Aspect | Relational Design | Single Table Design |');
+        this.log('|--------|-------------------|----------------------|');
+        this.log('| **Access Pattern** | Table scan (no efficient index) | Strategic GSI usage |');
+        this.log('| **Query Type** | Scan entire posts table | Query on EntityTypeIndex |');
+        this.log('| **Efficiency** | Scans all items to find posts | Direct query for POST entities |');
+        this.log('| **Cost Impact** | High RCU consumption | Lower RCU consumption |');
+        this.log('| **Performance** | Slow, expensive operation | Fast, efficient query |');
+        this.log('| **Results** | ' + `${badResult.duration}ms, ${badResult.consumedCapacity?.readCapacityUnits || 'N/A'} RCU` + ' | ' + `${goodResult.duration}ms, ${goodResult.consumedCapacity?.readCapacityUnits || 'N/A'} RCU` + ' |');
 
         this.printComparison(badResult, goodResult);
     }
@@ -317,25 +295,20 @@ export class TestService {
 
         const testUserId = 'user-00001';
 
-        // Bad Pattern: Relational (multiple queries required)
-        this.log('\n❌ BAD PATTERN - Relational Design:');
-        this.log('   Problem: Need multiple queries to get all comments by a user');
-        this.log('   1. First query: Get all posts by user (using GSI)');
-        this.log('   2. Then: Query each post for comments (N+1 problem)');
-        this.log('   Cost: High latency, multiple network requests, high RCU consumption');
-
         const badResult = await this.relationalDAO.getAllUserComments(testUserId);
-        this.log(`   Result: ${badResult.duration}ms, RCU: ${badResult.consumedCapacity?.readCapacityUnits || 'N/A'}, Data Points Fetched: ${badResult.itemCount}`);
-
-        // Good Pattern: Single Table (GSI overloading)
-        this.log('\n✅ GOOD PATTERN - Single Table Design:');
-        this.log('   Solution: Overload GSI1 for infrequently accessed data');
-        this.log('   GSI1PK: USER_COMMENTS#userId - groups all comments by user');
-        this.log('   GSI1SK: createdAt - enables date-based sorting');
-        this.log('   Cost: Single query, efficient for infrequent access');
-
         const goodResult = await this.singleTableDAO.getAllUserComments(testUserId);
-        this.log(`   Result: ${goodResult.duration}ms, RCU: ${goodResult.consumedCapacity?.readCapacityUnits || 'N/A'}, Data Points Fetched: ${goodResult.itemCount}`);
+
+        // Comparison Table
+        this.log('\n## Design Comparison: GSI Overloading vs Multiple Queries\n');
+        this.log('| Aspect | Relational Design | Single Table Design |');
+        this.log('|--------|-------------------|----------------------|');
+        this.log('| **Query Pattern** | Multiple queries (N+1 problem) | Single GSI query |');
+        this.log('| **Access Steps** | 1. Get user posts (GSI), 2. Get comments per post | Overloaded GSI1 |');
+        this.log('| **GSI Usage** | GSI per table + multiple queries | Single overloaded GSI |');
+        this.log('| **Key Structure** | GSI1PK: USER#userId, GSI1SK: createdAt | GSI1PK: USER_COMMENTS#userId |');
+        this.log('| **Efficiency** | High network overhead | Single efficient query |');
+        this.log('| **Use Case** | Frequent access patterns | Infrequent access patterns |');
+        this.log('| **Results** | ' + `${badResult.duration}ms, ${badResult.consumedCapacity?.readCapacityUnits || 'N/A'} RCU` + ' | ' + `${goodResult.duration}ms, ${goodResult.consumedCapacity?.readCapacityUnits || 'N/A'} RCU` + ' |');
 
         this.printComparison(badResult, goodResult);
 
@@ -398,10 +371,9 @@ export class TestService {
     }
 
     private testOutput: string[] = [];
-
     private log(message: string): void {
+        console.log(message);
         this.testOutput.push(message);
-
     }
 
     private async generateMarkdownReport(): Promise<string> {
@@ -425,7 +397,7 @@ export class TestService {
     private async saveMarkdownReport(report: string): Promise<void> {
         const fs = require('fs');
         const path = require('path');
-        const reportPath = path.join(__dirname, '..', '..', 'results.md');
+        const reportPath = path.join(process.cwd(), '..', 'results.md');
 
         fs.writeFileSync(reportPath, report);
         this.log(`Report saved to: ${reportPath}`);

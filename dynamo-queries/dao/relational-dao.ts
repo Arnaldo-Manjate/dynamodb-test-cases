@@ -83,7 +83,7 @@ export class RelationalDAO extends BaseDAO {
                 // BAD: Using specific field names instead of generic PK/SK
                 const command = new GetCommand({
                     TableName: this.usersTableName,
-                    Key: { PK: userId }, // Should be generic PK/SK
+                    Key: { userId: userId }, // Should be generic PK/SK
                     ReturnConsumedCapacity: "TOTAL"
                 });
                 return await this.client.send(command);
@@ -178,11 +178,11 @@ export class RelationalDAO extends BaseDAO {
         return this.measureOperation(
             async () => {
                 let requestCount = 0;
-                // BAD: Multiple network requests required for relational design
+                // Multiple network requests required for relational design
                 // 1. Get user
                 const userCommand = new GetCommand({
                     TableName: this.usersTableName,
-                    Key: { PK: userId },
+                    Key: { userId: userId },
                     ReturnConsumedCapacity: "TOTAL"
                 });
                 const user = await this.client.send(userCommand);
@@ -190,35 +190,25 @@ export class RelationalDAO extends BaseDAO {
                 // 2. Get user posts (requires GSI since main table has postId as PK)
                 const postsCommand = new QueryCommand({
                     TableName: this.postsTableName,
-                    IndexName: 'PostsByDateIndex',
+                    IndexName: 'PostsByUserIdIndex',
                     KeyConditionExpression: 'userId = :userId',
                     ExpressionAttributeValues: { ':userId': userId },
                     ReturnConsumedCapacity: "TOTAL"
                 });
                 const posts = await this.client.send(postsCommand);
                 requestCount++;
-                // 3. Get comments on user's posts (not comments by the user)
-                let allComments: any[] = [];
-                let commentsCapacity = 0;
-                if (posts.Items && posts.Items.length > 0) {
-                    for (const post of posts.Items) {
-                        const commentsCommand = new QueryCommand({
-                            TableName: this.commentsTableName,
-                            KeyConditionExpression: 'postId = :postId',
-                            ExpressionAttributeValues: {
-                                ':postId': post.postId
-                            },
-                            ReturnConsumedCapacity: "TOTAL"
-                        });
-                        requestCount++;
-                        const postComments = await this.client.send(commentsCommand);
-                        if (postComments.Items) {
-                            allComments.push(...postComments.Items);
-                        }
-                        requestCount++;
-                        commentsCapacity += postComments.ConsumedCapacity?.CapacityUnits || 0;
-                    }
-                }
+                // 3. Get comments on user's posts using GSI (single query instead of N+1)
+                const commentsCommand = new QueryCommand({
+                    TableName: this.commentsTableName,
+                    IndexName: 'CommentsByPostAuthorIndex',
+                    KeyConditionExpression: 'postAuthorUserId = :userId',
+                    ExpressionAttributeValues: { ':userId': userId },
+                    ReturnConsumedCapacity: "TOTAL"
+                });
+                requestCount++;
+                const commentsResult = await this.client.send(commentsCommand);
+                const allComments = commentsResult.Items || [];
+                const commentsCapacity = commentsResult.ConsumedCapacity?.CapacityUnits || 0;
 
                 // 4. Get user followers 
                 const followersCommand = new QueryCommand({
@@ -229,27 +219,18 @@ export class RelationalDAO extends BaseDAO {
                 });
                 const followers = await this.client.send(followersCommand);
                 requestCount++;
-                // 5. Get likes on user's posts (not likes by the user)
-                let allLikes: any[] = [];
-                let likesCapacity = 0;
-                if (posts.Items && posts.Items.length > 0) {
-                    for (const post of posts.Items) {
-                        const likesCommand = new QueryCommand({
-                            TableName: this.likesTableName,
-                            KeyConditionExpression: 'postId = :postId',
-                            ExpressionAttributeValues: {
-                                ':postId': post.postId
-                            },
-                            ReturnConsumedCapacity: "TOTAL"
-                        });
-                        const postLikes = await this.client.send(likesCommand);
-                        requestCount++;
-                        if (postLikes.Items) {
-                            allLikes.push(...postLikes.Items);
-                        }
-                        likesCapacity += postLikes.ConsumedCapacity?.CapacityUnits || 0;
-                    }
-                }
+                // 5. Get likes on user's posts using GSI (single query instead of N+1)
+                const likesCommand = new QueryCommand({
+                    TableName: this.likesTableName,
+                    IndexName: 'LikesByPostAuthorIndex',
+                    KeyConditionExpression: 'postAuthorUserId = :userId',
+                    ExpressionAttributeValues: { ':userId': userId },
+                    ReturnConsumedCapacity: "TOTAL"
+                });
+                requestCount++;
+                const likesResult = await this.client.send(likesCommand);
+                const allLikes = likesResult.Items || [];
+                const likesCapacity = likesResult.ConsumedCapacity?.CapacityUnits || 0;
 
                 // Return combined result with proper consumed capacity
                 const totalCapacity = (user.ConsumedCapacity?.CapacityUnits || 0) +

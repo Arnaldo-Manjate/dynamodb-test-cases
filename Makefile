@@ -1,30 +1,29 @@
-# DynamoDB Performance Test Project Makefile
 
 # Default values
-USER_COUNT ?= 1000
-POST_COUNT ?= 10000
-COMMENT_COUNT ?= 15000
+USER_COUNT ?= 50
+POST_COUNT ?= 1000
+COMMENT_COUNT ?= 1500
 LIKE_COUNT ?= 1000
 AWS_REGION ?= us-east-1
 
 .PHONY: install deploy destroy query-tables demo clean
 
-# Install dependencies
+# install dependencies
 install:
 	cd infrastructure && pnpm install
 	cd dynamo-queries && pnpm install
 
-# Deploy infrastructure
+# deploy infrastructure
 deploy:
 	cd infrastructure && pnpm run deploy
 
-# Destroy infrastructure
+# destroy infrastructure
 destroy:
 	cd infrastructure && pnpm run destroy
 
 # run tests on existing data
 query-tables:
-	cd dynamo-queries && AWS_REGION=$(AWS_REGION) pnpm run query-tables -- --user-count $(USER_COUNT) --post-count $(POST_COUNT) --comment-count $(COMMENT_COUNT) --like-count $(LIKE_COUNT)
+	cd dynamo-queries && AWS_REGION=$(AWS_REGION) pnpm run query-tables -- --user-count $(USER_COUNT) --post-count $(POST_COUNT) --comment-count $(COMMENT_COUNT) --like-count $(LIKE_COUNT) --skip-data-insertion $(SKIP_DATA_INSERTION)
 
 # Run the dynamo-queries demonstration
 demo:

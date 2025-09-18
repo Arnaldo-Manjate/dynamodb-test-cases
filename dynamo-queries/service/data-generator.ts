@@ -43,13 +43,73 @@ export class DataGenerator {
         "Good point!"
     ];
 
+    static generateRelationalTestData(
+        userCount: number,
+        postCount: number,
+        commentCount: number,
+        likeCount: number
+    ): RelationalTestData {
+        const users = this.generateRelationalUsers(userCount);
+        const posts = this.generateRelationalPosts(postCount, users, 0); // postsPerUser no longer used
+        const comments = this.generateRelationalComments(commentCount, users, posts, 0); // commentsPerUser no longer used
+        // Generate more followers than users to create realistic social media following patterns
+        const followerCount = Math.max(userCount * 2, 10); // At least 2x users or minimum 10
+        const followers = this.generateRelationalFollowers(followerCount, users);
+        const userFollowings = this.generateRelationalUserFollowing(followers);
+        const likes = this.generateRelationalLikes(likeCount, users, posts, 0); // likesPerUser no longer used
+
+        return {
+            users,
+            posts,
+            comments,
+            followers,
+            userFollowings,
+            likes
+        };
+    }
+
+    static generateSingleTableTestData(
+        userCount: number,
+        postCount: number,
+        commentCount: number,
+        likeCount: number
+    ): SingleTableTestData {
+        const relationalUsers = this.generateRelationalUsers(userCount);
+        const relationalPosts = this.generateRelationalPosts(postCount, relationalUsers, Math.ceil(postCount / userCount)); // Distribute posts randomly
+        const relationalComments = this.generateRelationalComments(commentCount, relationalUsers, relationalPosts, Math.ceil(commentCount / userCount)); // Distribute comments randomly
+        // Generate more followers than users to create realistic social media following patterns
+        const followerCount = Math.max(userCount * 2, 10); // At least 2x users or minimum 10
+        const relationalFollowers = this.generateRelationalFollowers(followerCount, relationalUsers);
+        const relationalLikes = this.generateRelationalLikes(likeCount, relationalUsers, relationalPosts, Math.ceil(likeCount / userCount)); // Distribute likes randomly
+
+        return {
+            users: this.generateSingleTableUsers(relationalUsers),
+            posts: this.generateSingleTablePosts(relationalPosts),
+            comments: this.generateSingleTableComments(relationalComments),
+            followers: this.generateSingleTableFollowers(relationalFollowers),
+            likes: this.generateSingleTableLikes(relationalLikes)
+        };
+    }
+
+    static generateTestData(
+        userCount: number,
+        postCount: number,
+        commentCount: number,
+        likeCount: number
+    ): CompleteTestData {
+        return {
+            relational: this.generateRelationalTestData(userCount, postCount, commentCount, likeCount),
+            singleTable: this.generateSingleTableTestData(userCount, postCount, commentCount, likeCount)
+        };
+    }
+
     static generateRelationalUsers(count: number): RelationalUser[] {
         const users: RelationalUser[] = [];
 
         for (let i = 1; i <= count; i++) {
             const userId = `user-${i.toString().padStart(5, '0')}`;
             users.push({
-                PK: userId,
+                userId: userId,
                 id: userId,
                 email: `user${i}@example.com`,
                 username: `user${i}`,
@@ -64,7 +124,7 @@ export class DataGenerator {
         const posts: RelationalPost[] = [];
 
         for (let i = 1; i <= count; i++) {
-            // Randomly distribute posts across users using modulo
+            // Randomly distribute posts across users 
             const userId = users[i % users.length].id;
             const postId = `post-${i.toString().padStart(8, '0')}`;
             const createdAt = new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString();
@@ -88,7 +148,9 @@ export class DataGenerator {
         for (let i = 1; i <= count; i++) {
             // Randomly distribute comments across users and posts using modulo
             const userId = users[i % users.length].id;
-            const postId = posts[i % posts.length].id;
+            const post = posts[i % posts.length];
+            const postId = post.id;
+            const postAuthorUserId = post.userId; // Get the post author's userId
             const commentId = `comment-${i.toString().padStart(8, '0')}`;
             const createdAt = new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString();
             const content = this.COMMENT_CONTENT[Math.floor(Math.random() * this.COMMENT_CONTENT.length)];
@@ -98,6 +160,7 @@ export class DataGenerator {
                 id: commentId,
                 userId,
                 postId,
+                postAuthorUserId, // Include post author's userId for GSI
                 content,
                 createdAt
             });
@@ -166,7 +229,9 @@ export class DataGenerator {
         for (let i = 1; i <= count; i++) {
             // Randomly distribute likes across users and posts using modulo
             const userId = users[i % users.length].id;
-            const postId = posts[i % posts.length].id;
+            const post = posts[i % posts.length];
+            const postId = post.id;
+            const postAuthorUserId = post.userId; // Get the post author's userId
             const likeId = `like-${i.toString().padStart(8, '0')}`;
             const createdAt = new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString();
 
@@ -175,6 +240,7 @@ export class DataGenerator {
                 id: likeId,
                 userId,
                 postId,
+                postAuthorUserId, // Include post author's userId for GSI
                 createdAt
             });
         }
@@ -184,8 +250,8 @@ export class DataGenerator {
 
     static generateSingleTableUsers(users: RelationalUser[]): SingleTableUser[] {
         return users.map(user => ({
-            PK: `USER#${user.id}`,
-            SK: `USER#${user.id}`,
+            PK: `${EntityType.USER}#${user.id}`,
+            SK: `${EntityType.USER}#${user.id}`,
             entityType: EntityType.USER,
             id: user.id,
             username: user.username,
@@ -196,21 +262,25 @@ export class DataGenerator {
 
     static generateSingleTablePosts(posts: RelationalPost[]): SingleTablePost[] {
         return posts.map(post => ({
-            PK: `USER#${post.userId}`, // User is always the partition key
-            SK: `POSTS#${post.createdAt}`, // Static identifier + date as sort key
+            PK: `${EntityType.USER}#${post.userId}`, // User is always the partition key
+            SK: `${EntityType.POST}#${post.createdAt}`, // Static identifier + date as sort key
             entityType: EntityType.POST,
             id: post.id,
             userId: post.userId,
             content: post.content,
             createdAt: post.createdAt,
-            datePrefix: post.createdAt.split('T')[0]
+            datePrefix: post.createdAt.split('T')[0],
+
+            // our secondary, less frequent access pattern
+            GSI1PK: EntityType.POST,
+            GSI1SK: post.createdAt
         }));
     }
 
     static generateSingleTableComments(comments: RelationalComment[]): SingleTableComment[] {
         return comments.map(comment => ({
-            PK: `USER#${comment.userId}`, // User is always the partition key
-            SK: `COMMENTS#${comment.createdAt}`, // Static identifier + date as sort key
+            PK: `${EntityType.USER}#${comment.userId}`, // User is always the partition key
+            SK: `${EntityType.COMMENT}#${comment.createdAt}`, // Static identifier + date as sort key
             entityType: EntityType.COMMENT,
             id: comment.id,
             userId: comment.userId,
@@ -218,15 +288,17 @@ export class DataGenerator {
             content: comment.content,
             createdAt: comment.createdAt,
             datePrefix: comment.createdAt.split('T')[0],
-            GSI1PK: `USER_COMMENTS#${comment.userId}`, // Overloaded GSI for user comments
-            GSI1SK: comment.createdAt // Sort by date
+
+            // our secondary, less frequent access pattern
+            GSI1PK: `${EntityType.COMMENT}`,
+            GSI1SK: comment.createdAt
         }));
     }
 
     static generateSingleTableFollowers(followers: RelationalFollower[]): SingleTableFollower[] {
         return followers.map(follower => ({
-            PK: `USER#${follower.followingId}`,
-            SK: `FOLLOWERS#${follower.createdAt}`,
+            PK: `${EntityType.USER}#${follower.followingId}`,
+            SK: `${EntityType.FOLLOWER}#${follower.createdAt}`,
             entityType: EntityType.FOLLOWER,
             id: follower.id,
             followerId: follower.followerId,
@@ -238,8 +310,8 @@ export class DataGenerator {
 
     static generateSingleTableLikes(likes: RelationalLike[]): SingleTableLike[] {
         return likes.map(like => ({
-            PK: `USER#${like.userId}`, // User is always the partition key
-            SK: `LIKES#${like.createdAt}`, // Static identifier + date as sort key
+            PK: `${EntityType.USER}#${like.userId}`, // User is always the partition key
+            SK: `${EntityType.LIKE}#${like.createdAt}`, // Static identifier + date as sort key
             entityType: EntityType.LIKE,
             id: like.id,
             userId: like.userId,
@@ -247,65 +319,5 @@ export class DataGenerator {
             createdAt: like.createdAt,
             datePrefix: like.createdAt.split('T')[0]
         }));
-    }
-
-    static generateRelationalTestData(
-        userCount: number,
-        postCount: number,
-        commentCount: number,
-        likeCount: number
-    ): RelationalTestData {
-        const users = this.generateRelationalUsers(userCount);
-        const posts = this.generateRelationalPosts(postCount, users, 0); // postsPerUser no longer used
-        const comments = this.generateRelationalComments(commentCount, users, posts, 0); // commentsPerUser no longer used
-        // Generate more followers than users to create realistic social media following patterns
-        const followerCount = Math.max(userCount * 2, 10); // At least 2x users or minimum 10
-        const followers = this.generateRelationalFollowers(followerCount, users);
-        const userFollowings = this.generateRelationalUserFollowing(followers);
-        const likes = this.generateRelationalLikes(likeCount, users, posts, 0); // likesPerUser no longer used
-
-        return {
-            users,
-            posts,
-            comments,
-            followers,
-            userFollowings,
-            likes
-        };
-    }
-
-    static generateSingleTableTestData(
-        userCount: number,
-        postCount: number,
-        commentCount: number,
-        likeCount: number
-    ): SingleTableTestData {
-        const relationalUsers = this.generateRelationalUsers(userCount);
-        const relationalPosts = this.generateRelationalPosts(postCount, relationalUsers, Math.ceil(postCount / userCount)); // Distribute posts randomly
-        const relationalComments = this.generateRelationalComments(commentCount, relationalUsers, relationalPosts, Math.ceil(commentCount / userCount)); // Distribute comments randomly
-        // Generate more followers than users to create realistic social media following patterns
-        const followerCount = Math.max(userCount * 2, 10); // At least 2x users or minimum 10
-        const relationalFollowers = this.generateRelationalFollowers(followerCount, relationalUsers);
-        const relationalLikes = this.generateRelationalLikes(likeCount, relationalUsers, relationalPosts, Math.ceil(likeCount / userCount)); // Distribute likes randomly
-
-        return {
-            users: this.generateSingleTableUsers(relationalUsers),
-            posts: this.generateSingleTablePosts(relationalPosts),
-            comments: this.generateSingleTableComments(relationalComments),
-            followers: this.generateSingleTableFollowers(relationalFollowers),
-            likes: this.generateSingleTableLikes(relationalLikes)
-        };
-    }
-
-    static generateTestData(
-        userCount: number,
-        postCount: number,
-        commentCount: number,
-        likeCount: number
-    ): CompleteTestData {
-        return {
-            relational: this.generateRelationalTestData(userCount, postCount, commentCount, likeCount),
-            singleTable: this.generateSingleTableTestData(userCount, postCount, commentCount, likeCount)
-        };
     }
 } 
