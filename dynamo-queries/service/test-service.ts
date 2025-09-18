@@ -13,9 +13,6 @@ export class TestService {
             'users-relational',
             'posts-relational',
             'comments-relational',
-            'followers-relational',
-            'user-following-relational',
-            'likes-relational',
             region
         );
         this.singleTableDAO = new SingleTableDAO('single-table-social', region);
@@ -25,7 +22,6 @@ export class TestService {
         userCount: number = 5,
         postCount: number = 20,
         commentCount: number = 50,
-        likeCount: number = 100,
         skipDataInsertion: boolean = false
     ): Promise<void> {
         this.log('Starting DynamoDB Design Pattern Tests');
@@ -35,12 +31,11 @@ export class TestService {
                 const hasData = await this.checkIfDataExists();
                 if (!hasData) {
                     // Generate test data
-                    this.log(`Generating test data: ${userCount} users, ${postCount} posts, ${commentCount} comments, ${likeCount} likes...`);
+                    this.log(`Generating test data: ${userCount} users, ${postCount} posts, ${commentCount} comments...`);
                     const testData: CompleteTestData = DataGenerator.generateTestData(
                         userCount,
                         postCount,
-                        commentCount,
-                        likeCount
+                        commentCount
                     );
 
                     // Insert data
@@ -94,10 +89,7 @@ export class TestService {
         const tables = [
             this.relationalDAO.getUsersTableName,
             this.relationalDAO.getPostsTableName,
-            this.relationalDAO.getCommentsTableName,
-            this.relationalDAO.getFollowersTableName,
-            this.relationalDAO.getUserFollowingTableName,
-            this.relationalDAO.getLikesTableName
+            this.relationalDAO.getCommentsTableName
         ];
 
         for (const tableName of tables) {
@@ -125,15 +117,6 @@ export class TestService {
                     break;
                 case 'comments-relational':
                     keyAttributes = ['postId', 'commentId'];
-                    break;
-                case 'followers-relational':
-                    keyAttributes = ['followingId', 'followerId'];
-                    break;
-                case 'user-following-relational':
-                    keyAttributes = ['followerId', 'followingId'];
-                    break;
-                case 'likes-relational':
-                    keyAttributes = ['postId', 'likeId'];
                     break;
                 case 'single-table-social':
                     keyAttributes = ['PK', 'SK'];
@@ -204,19 +187,6 @@ export class TestService {
         await this.relationalDAO.batchCreateComments(testData.relational.comments);
         await this.singleTableDAO.batchCreateItems(testData.singleTable.comments);
 
-        // Insert followers
-        this.log('  - Inserting followers...');
-        await this.relationalDAO.batchCreateFollowers(testData.relational.followers);
-        await this.singleTableDAO.batchCreateItems(testData.singleTable.followers);
-
-        // Insert user-following relationships
-        this.log('  - Inserting user-following relationships...');
-        await this.relationalDAO.batchCreateUserFollowing(testData.relational.userFollowings);
-
-        // Insert likes
-        this.log('  - Inserting likes...');
-        await this.relationalDAO.batchCreateLikes(testData.relational.likes);
-        await this.singleTableDAO.batchCreateItems(testData.singleTable.likes);
 
         this.log('Data insertion complete!');
     }
@@ -251,8 +221,8 @@ export class TestService {
         this.log('\n## Design Comparison: Static Identifiers vs Multiple Network Requests\n');
         this.log('| Aspect | Relational Design | Single Table Design |');
         this.log('|--------|-------------------|----------------------|');
-        this.log('| **Data Storage** | Multiple tables (users, posts, comments, followers, likes) | Single table with composite keys |');
-        this.log('| **Access Pattern** | 5+ separate queries (user + posts + comments + followers + likes) | Single query with PK/SK filtering |');
+        this.log('| **Data Storage** | Multiple tables (users, posts, comments) | Single table with composite keys |');
+        this.log('| **Access Pattern** | 3+ separate queries (user + posts + comments) | Single query with PK/SK filtering |');
         this.log('| **Key Structure** | Simple primary keys per table | PK: `USER#userId`, SK: `#ENTITY#date` |');
         this.log('| **Data Location** | Distributed across tables | Co-located by partition key |');
         this.log('| **Query Complexity** | Multiple round trips | Single efficient query |');
@@ -335,8 +305,8 @@ export class TestService {
         // Calculate total requests for relational design
         const relationalRequests = relationalResult.requestCount || (
             relationalResult.posts ?
-                // 2 base requests (user + followers) + 1 for posts + 2 * number of posts (comments & likes per post)
-                2 + 1 + (2 * (relationalResult.posts?.length || 0)) :
+                // 2 base requests (user + posts) + 1 for comments
+                2 + 1 :
                 1
         );
         this.log(`| Relational | ${relationalResult.itemCount} items | ${relationalRequests} requests |`);

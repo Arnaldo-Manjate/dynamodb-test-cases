@@ -3,7 +3,6 @@
 USER_COUNT ?= 50
 POST_COUNT ?= 1000
 COMMENT_COUNT ?= 1500
-LIKE_COUNT ?= 1000
 AWS_REGION ?= us-east-1
 
 .PHONY: install deploy destroy query-tables demo clean
@@ -23,11 +22,11 @@ destroy:
 
 # run tests on existing data
 query-tables:
-	cd dynamo-queries && AWS_REGION=$(AWS_REGION) pnpm run query-tables -- --user-count $(USER_COUNT) --post-count $(POST_COUNT) --comment-count $(COMMENT_COUNT) --like-count $(LIKE_COUNT) --skip-data-insertion $(SKIP_DATA_INSERTION)
+	cd dynamo-queries && AWS_REGION=$(AWS_REGION) pnpm run query-tables -- --user-count $(USER_COUNT) --post-count $(POST_COUNT) --comment-count $(COMMENT_COUNT) --skip-data-insertion $(SKIP_DATA_INSERTION)
 
 # Run the dynamo-queries demonstration
 demo:
-	cd dynamo-queries && AWS_REGION=$(AWS_REGION) pnpm start -- --user-count $(USER_COUNT) --post-count $(POST_COUNT) --comment-count $(COMMENT_COUNT) --like-count $(LIKE_COUNT)
+	cd dynamo-queries && AWS_REGION=$(AWS_REGION) pnpm start -- --user-count $(USER_COUNT) --post-count $(POST_COUNT) --comment-count $(COMMENT_COUNT)
 
 # Clear all data from both single table and relational tables
 clear-tables:

@@ -23,18 +23,12 @@ export class RelationalDAO extends BaseDAO {
     private usersTableName: string;
     private postsTableName: string;
     private commentsTableName: string;
-    private followersTableName: string;
-    private userFollowingTableName: string;
-    private likesTableName: string;
 
-    constructor(usersTableName: string, postsTableName: string, commentsTableName: string, followersTableName: string, userFollowingTableName: string, likesTableName: string, region: string = 'us-east-1') {
+    constructor(usersTableName: string, postsTableName: string, commentsTableName: string, region: string = 'us-east-1') {
         super(region);
         this.usersTableName = usersTableName;
         this.postsTableName = postsTableName;
         this.commentsTableName = commentsTableName;
-        this.followersTableName = followersTableName;
-        this.userFollowingTableName = userFollowingTableName;
-        this.likesTableName = likesTableName;
     }
 
     protected getDesignType(): 'Relational' {
@@ -45,9 +39,6 @@ export class RelationalDAO extends BaseDAO {
     get getUsersTableName(): string { return this.usersTableName; }
     get getPostsTableName(): string { return this.postsTableName; }
     get getCommentsTableName(): string { return this.commentsTableName; }
-    get getFollowersTableName(): string { return this.followersTableName; }
-    get getUserFollowingTableName(): string { return this.userFollowingTableName; }
-    get getLikesTableName(): string { return this.likesTableName; }
     get getClient() { return this.client; }
 
     // Point 1: Missing Sort Keys - Bad Pattern
@@ -210,34 +201,10 @@ export class RelationalDAO extends BaseDAO {
                 const allComments = commentsResult.Items || [];
                 const commentsCapacity = commentsResult.ConsumedCapacity?.CapacityUnits || 0;
 
-                // 4. Get user followers 
-                const followersCommand = new QueryCommand({
-                    TableName: this.followersTableName,
-                    KeyConditionExpression: 'followingId = :followingId',
-                    ExpressionAttributeValues: { ':followingId': userId },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-                const followers = await this.client.send(followersCommand);
-                requestCount++;
-                // 5. Get likes on user's posts using GSI (single query instead of N+1)
-                const likesCommand = new QueryCommand({
-                    TableName: this.likesTableName,
-                    IndexName: 'LikesByPostAuthorIndex',
-                    KeyConditionExpression: 'postAuthorUserId = :userId',
-                    ExpressionAttributeValues: { ':userId': userId },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-                requestCount++;
-                const likesResult = await this.client.send(likesCommand);
-                const allLikes = likesResult.Items || [];
-                const likesCapacity = likesResult.ConsumedCapacity?.CapacityUnits || 0;
-
                 // Return combined result with proper consumed capacity
                 const totalCapacity = (user.ConsumedCapacity?.CapacityUnits || 0) +
                     (posts.ConsumedCapacity?.CapacityUnits || 0) +
-                    commentsCapacity +
-                    (followers.ConsumedCapacity?.CapacityUnits || 0) +
-                    likesCapacity;
+                    commentsCapacity;
 
                 // Request count is tracked by incrementRequestCount() in base DAO
                 // Each call to client.send() increments the counter
@@ -246,19 +213,15 @@ export class RelationalDAO extends BaseDAO {
                     user: user.Item,
                     posts: posts.Items,
                     comments: allComments,
-                    followers: followers.Items,
-                    likes: allLikes,
                     ConsumedCapacity: {
                         CapacityUnits: totalCapacity
                     },
                     Items: [
                         user.Item,
                         ...(posts.Items || []),
-                        ...allComments,
-                        ...(followers.Items || []),
-                        ...allLikes
+                        ...allComments
                     ],
-                    Count: 1 + (posts.Count || 0) + allComments.length + (followers.Count || 0) + allLikes.length,
+                    Count: 1 + (posts.Count || 0) + allComments.length,
                     requestCount: requestCount
                 };
             },
@@ -313,17 +276,6 @@ export class RelationalDAO extends BaseDAO {
         return this.batchWriteWithChunking(comments, this.commentsTableName, 'BatchCreateComments');
     }
 
-    async batchCreateFollowers(followers: any[]): Promise<TestResult> {
-        return this.batchWriteWithChunking(followers, this.followersTableName, 'BatchCreateFollowers');
-    }
-
-    async batchCreateUserFollowing(userFollowings: any[]): Promise<TestResult> {
-        return this.batchWriteWithChunking(userFollowings, this.userFollowingTableName, 'BatchCreateUserFollowing');
-    }
-
-    async batchCreateLikes(likes: any[]): Promise<TestResult> {
-        return this.batchWriteWithChunking(likes, this.likesTableName, 'BatchCreateLikes');
-    }
 
     // Point 6: Multiple Queries Required - Bad Pattern
     // Need to first get all posts by user, then query each post for comments

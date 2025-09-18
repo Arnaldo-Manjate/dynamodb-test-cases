@@ -12,7 +12,7 @@ import { QueryCommand, GetCommand, PutCommand, BatchWriteCommand } from '@aws-sd
  * for specific entity types. No LSI or GSI is needed for common access patterns.
  * 
  * Key Benefits:
- * - Single query retrieves all user data (user, posts, comments, followers, likes)
+ * - Single query retrieves all user data (user, posts, comments)
  * - Individual entity queries remain efficient using begins_with on SK
  * - Static identifiers (USER#, POST#, COMMENT#, etc.) organize data logically
  * - No index complexity for frequently accessed patterns
@@ -158,8 +158,6 @@ export class SingleTableDAO extends BaseDAO {
                 // Efficient: Loop once and push to right arrays
                 const posts: any[] = [];
                 const comments: any[] = [];
-                const followers: any[] = [];
-                const likes: any[] = [];
 
                 if (result.Items) {
                     for (const item of result.Items) {
@@ -170,12 +168,6 @@ export class SingleTableDAO extends BaseDAO {
                             case EntityType.COMMENT:
                                 comments.push(item);
                                 break;
-                            case EntityType.FOLLOWER:
-                                followers.push(item);
-                                break;
-                            case EntityType.LIKE:
-                                likes.push(item);
-                                break;
                         }
                     }
                 }
@@ -183,8 +175,6 @@ export class SingleTableDAO extends BaseDAO {
                 return {
                     posts,
                     comments,
-                    followers,
-                    likes,
                     ConsumedCapacity: result.ConsumedCapacity,
                     Items: result.Items || [],
                     Count: result.Count || 0,
@@ -239,45 +229,6 @@ export class SingleTableDAO extends BaseDAO {
         );
     }
 
-    async getUserFollowersOnly(userId: string): Promise<TestResult> {
-        return this.measureOperation(
-            async () => {
-                // GOOD: Can still query just followers efficiently
-                const command = new QueryCommand({
-                    TableName: this.tableName,
-                    KeyConditionExpression: 'PK = :pk',
-                    ExpressionAttributeValues: {
-                        ':pk': `FOLLOWER#${userId}`
-                    },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-                return await this.client.send(command);
-            },
-            'GetUserFollowersOnly_IndividualAccess',
-            'SingleTable',
-            1
-        );
-    }
-
-    async getUserLikesOnly(userId: string): Promise<TestResult> {
-        return this.measureOperation(
-            async () => {
-                // GOOD: Can still query just likes efficiently
-                const command = new QueryCommand({
-                    TableName: this.tableName,
-                    KeyConditionExpression: 'PK = :pk',
-                    ExpressionAttributeValues: {
-                        ':pk': `LIKE#${userId}`
-                    },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-                return await this.client.send(command);
-            },
-            'GetUserLikesOnly_IndividualAccess',
-            'SingleTable',
-            1
-        );
-    }
 
 
 

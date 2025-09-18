@@ -2,18 +2,13 @@ import {
     RelationalUser,
     RelationalPost,
     RelationalComment,
-    RelationalFollower,
-    RelationalLike,
     SingleTableUser,
     SingleTablePost,
     SingleTableComment,
-    SingleTableFollower,
-    SingleTableLike,
     RelationalTestData,
     SingleTableTestData,
     CompleteTestData,
-    EntityType,
-    RelationalUserFollowing
+    EntityType
 } from '../@types';
 
 export class DataGenerator {
@@ -46,60 +41,43 @@ export class DataGenerator {
     static generateRelationalTestData(
         userCount: number,
         postCount: number,
-        commentCount: number,
-        likeCount: number
+        commentCount: number
     ): RelationalTestData {
         const users = this.generateRelationalUsers(userCount);
         const posts = this.generateRelationalPosts(postCount, users, 0); // postsPerUser no longer used
         const comments = this.generateRelationalComments(commentCount, users, posts, 0); // commentsPerUser no longer used
-        // Generate more followers than users to create realistic social media following patterns
-        const followerCount = Math.max(userCount * 2, 10); // At least 2x users or minimum 10
-        const followers = this.generateRelationalFollowers(followerCount, users);
-        const userFollowings = this.generateRelationalUserFollowing(followers);
-        const likes = this.generateRelationalLikes(likeCount, users, posts, 0); // likesPerUser no longer used
 
         return {
             users,
             posts,
-            comments,
-            followers,
-            userFollowings,
-            likes
+            comments
         };
     }
 
     static generateSingleTableTestData(
         userCount: number,
         postCount: number,
-        commentCount: number,
-        likeCount: number
+        commentCount: number
     ): SingleTableTestData {
         const relationalUsers = this.generateRelationalUsers(userCount);
         const relationalPosts = this.generateRelationalPosts(postCount, relationalUsers, Math.ceil(postCount / userCount)); // Distribute posts randomly
         const relationalComments = this.generateRelationalComments(commentCount, relationalUsers, relationalPosts, Math.ceil(commentCount / userCount)); // Distribute comments randomly
-        // Generate more followers than users to create realistic social media following patterns
-        const followerCount = Math.max(userCount * 2, 10); // At least 2x users or minimum 10
-        const relationalFollowers = this.generateRelationalFollowers(followerCount, relationalUsers);
-        const relationalLikes = this.generateRelationalLikes(likeCount, relationalUsers, relationalPosts, Math.ceil(likeCount / userCount)); // Distribute likes randomly
 
         return {
             users: this.generateSingleTableUsers(relationalUsers),
             posts: this.generateSingleTablePosts(relationalPosts),
-            comments: this.generateSingleTableComments(relationalComments),
-            followers: this.generateSingleTableFollowers(relationalFollowers),
-            likes: this.generateSingleTableLikes(relationalLikes)
+            comments: this.generateSingleTableComments(relationalComments)
         };
     }
 
     static generateTestData(
         userCount: number,
         postCount: number,
-        commentCount: number,
-        likeCount: number
+        commentCount: number
     ): CompleteTestData {
         return {
-            relational: this.generateRelationalTestData(userCount, postCount, commentCount, likeCount),
-            singleTable: this.generateSingleTableTestData(userCount, postCount, commentCount, likeCount)
+            relational: this.generateRelationalTestData(userCount, postCount, commentCount),
+            singleTable: this.generateSingleTableTestData(userCount, postCount, commentCount)
         };
     }
 
@@ -169,84 +147,6 @@ export class DataGenerator {
         return comments;
     }
 
-    static generateRelationalFollowers(count: number, users: RelationalUser[]): RelationalFollower[] {
-        const followers: RelationalFollower[] = [];
-        const usedRelationships = new Set<string>(); // Track unique follower-following pairs
-
-        for (let i = 1; i <= count; i++) {
-            let followerId: string;
-            let followingId: string;
-            let relationshipKey: string;
-
-            // Generate unique follower-following relationships
-            do {
-                // Randomly select follower and following users
-                const followerIndex = Math.floor(Math.random() * users.length);
-                const followingIndex = Math.floor(Math.random() * users.length);
-
-                followerId = users[followerIndex].id;
-                followingId = users[followingIndex].id;
-                relationshipKey = `${followerId}-${followingId}`;
-
-                // Ensure users don't follow themselves
-                if (followerId === followingId) {
-                    continue;
-                }
-            } while (usedRelationships.has(relationshipKey));
-
-            // Add this relationship to our set
-            usedRelationships.add(relationshipKey);
-
-            const followId = `follow-${i.toString().padStart(8, '0')}`;
-            const createdAt = new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString();
-
-            followers.push({
-                followId, // Internal ID
-                id: followId,
-                followerId, // User who is following
-                followingId, // User being followed
-                createdAt
-            });
-        }
-
-        return followers;
-    }
-
-    static generateRelationalUserFollowing(followers: RelationalFollower[]): RelationalUserFollowing[] {
-        // Convert followers to user-following format for the new table
-        return followers.map(follower => ({
-            followId: follower.followId,
-            id: follower.followId,
-            followerId: follower.followerId,
-            followingId: follower.followingId,
-            createdAt: follower.createdAt
-        }));
-    }
-
-    static generateRelationalLikes(count: number, users: RelationalUser[], posts: RelationalPost[], likesPerUser: number): RelationalLike[] {
-        const likes: RelationalLike[] = [];
-
-        for (let i = 1; i <= count; i++) {
-            // Randomly distribute likes across users and posts using modulo
-            const userId = users[i % users.length].id;
-            const post = posts[i % posts.length];
-            const postId = post.id;
-            const postAuthorUserId = post.userId; // Get the post author's userId
-            const likeId = `like-${i.toString().padStart(8, '0')}`;
-            const createdAt = new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString();
-
-            likes.push({
-                likeId,
-                id: likeId,
-                userId,
-                postId,
-                postAuthorUserId, // Include post author's userId for GSI
-                createdAt
-            });
-        }
-
-        return likes;
-    }
 
     static generateSingleTableUsers(users: RelationalUser[]): SingleTableUser[] {
         return users.map(user => ({
@@ -295,29 +195,4 @@ export class DataGenerator {
         }));
     }
 
-    static generateSingleTableFollowers(followers: RelationalFollower[]): SingleTableFollower[] {
-        return followers.map(follower => ({
-            PK: `${EntityType.USER}#${follower.followingId}`,
-            SK: `${EntityType.FOLLOWER}#${follower.createdAt}`,
-            entityType: EntityType.FOLLOWER,
-            id: follower.id,
-            followerId: follower.followerId,
-            followingId: follower.followingId,
-            createdAt: follower.createdAt,
-            datePrefix: follower.createdAt.split('T')[0]
-        }));
-    }
-
-    static generateSingleTableLikes(likes: RelationalLike[]): SingleTableLike[] {
-        return likes.map(like => ({
-            PK: `${EntityType.USER}#${like.userId}`, // User is always the partition key
-            SK: `${EntityType.LIKE}#${like.createdAt}`, // Static identifier + date as sort key
-            entityType: EntityType.LIKE,
-            id: like.id,
-            userId: like.userId,
-            postId: like.postId,
-            createdAt: like.createdAt,
-            datePrefix: like.createdAt.split('T')[0]
-        }));
-    }
 } 

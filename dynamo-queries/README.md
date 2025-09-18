@@ -23,7 +23,7 @@ The project showcases **6 key points** from your article, comparing each side by
    - ✅ Single Table: Generic names (EntityTypeIndex for analytics only)
 
 5. **Multiple Queries vs Single Query Efficiency**
-   - ❌ Relational: Multiple queries for user + posts + comments + followers + likes
+   - ❌ Relational: Multiple queries for user + posts + comments
    - ✅ Single Table: Single query using PK=USER#userId with OR + begins_with for all entity types
 
 6. **Inefficient Access Patterns vs Strategic Design**

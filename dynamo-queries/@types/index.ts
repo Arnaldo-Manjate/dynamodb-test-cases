@@ -2,9 +2,7 @@
 export enum EntityType {
     USER = 'USER',
     POST = 'POST',
-    COMMENT = 'COMMENT',
-    FOLLOWER = 'FOLLOWER',
-    LIKE = 'LIKE'
+    COMMENT = 'COMMENT'
 }
 
 // Relational Design Types
@@ -34,30 +32,6 @@ export interface RelationalComment {
     createdAt: string;
 }
 
-export interface RelationalFollower {
-    followId: string;
-    id: string;
-    followerId: string;
-    followingId: string;
-    createdAt: string;
-}
-
-export interface RelationalUserFollowing {
-    followId: string;
-    id: string;
-    followerId: string;
-    followingId: string;
-    createdAt: string;
-}
-
-export interface RelationalLike {
-    likeId: string;
-    id: string;
-    userId: string;
-    postId: string;
-    postAuthorUserId: string; // For GSI: allows querying likes by post author
-    createdAt: string;
-}
 
 // Single Table Design Types
 export interface SingleTableUser {
@@ -95,27 +69,6 @@ export interface SingleTableComment {
     GSI1SK?: string; // <createdAt> - for sorting comments by date
 }
 
-export interface SingleTableFollower {
-    PK: string; // USER#<userId>
-    SK: string; // #FOLLOWERS#<date>
-    entityType: EntityType.FOLLOWER;
-    id: string;
-    followerId: string;
-    followingId: string;
-    createdAt: string;
-    datePrefix: string;
-}
-
-export interface SingleTableLike {
-    PK: string; // USER#<userId>
-    SK: string; // #LIKES#<date>
-    entityType: EntityType.LIKE;
-    id: string;
-    userId: string;
-    postId: string;
-    createdAt: string;
-    datePrefix: string;
-}
 
 // Test Result Types
 export interface TestResult {
@@ -134,8 +87,6 @@ export interface TestResult {
     user?: any;
     posts?: any[];
     comments?: any[];
-    followers?: any[];
-    likes?: any[];
 }
 
 // Data Generation Result Types
@@ -143,17 +94,12 @@ export interface RelationalTestData {
     users: RelationalUser[];
     posts: RelationalPost[];
     comments: RelationalComment[];
-    followers: RelationalFollower[];
-    userFollowings: RelationalUserFollowing[];
-    likes: RelationalLike[];
 }
 
 export interface SingleTableTestData {
     users: SingleTableUser[];
     posts: SingleTablePost[];
     comments: SingleTableComment[];
-    followers: SingleTableFollower[];
-    likes: SingleTableLike[];
 }
 
 export interface CompleteTestData {
