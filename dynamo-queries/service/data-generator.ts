@@ -1,10 +1,10 @@
 import {
     RelationalUser,
-    RelationalPost,
-    RelationalComment,
+    RelationalOrder,
+    RelationalOrderItem,
     SingleTableUser,
-    SingleTablePost,
-    SingleTableComment,
+    SingleTableOrder,
+    SingleTableOrderItem,
     RelationalTestData,
     SingleTableTestData,
     CompleteTestData,
@@ -12,84 +12,90 @@ import {
 } from '../@types';
 
 export class DataGenerator {
-    private static readonly POST_CONTENT = [
-        "Just had an amazing day!",
-        "Working on some exciting new features",
-        "Coffee time ☕",
-        "Learning new technologies",
-        "Beautiful sunset today",
-        "Productive coding session",
-        "Great team meeting",
-        "New project ideas",
-        "Weekend plans",
-        "Tech conference insights"
+    private static readonly PRODUCT_NAMES = [
+        "Wireless Headphones",
+        "Smart Watch",
+        "Laptop Stand",
+        "Mechanical Keyboard",
+        "Gaming Mouse",
+        "USB-C Hub",
+        "Bluetooth Speaker",
+        "Phone Case",
+        "Screen Protector",
+        "Cable Organizer"
     ];
 
-    private static readonly COMMENT_CONTENT = [
-        "Great post!",
-        "Thanks for sharing",
-        "Interesting perspective",
-        "Well said!",
-        "I agree with this",
-        "Food for thought",
-        "Nice insights",
-        "Keep it up!",
-        "This is helpful",
-        "Good point!"
+    private static readonly ORDER_STATUSES = [
+        "pending",
+        "processing",
+        "shipped",
+        "delivered",
+        "cancelled"
     ];
+
+    private static readonly PRICING_PLANS = [
+        "free",
+        "premium",
+        "enterprise"
+    ];
+
+
+    static generateTestData(
+        userCount: number,
+        orderCount: number,
+        orderItemCount: number
+    ): CompleteTestData {
+        return {
+            relational: this.generateRelationalTestData(userCount, orderCount, orderItemCount),
+            singleTable: this.generateSingleTableTestData(userCount, orderCount, orderItemCount)
+        };
+    }
 
     static generateRelationalTestData(
         userCount: number,
-        postCount: number,
-        commentCount: number
+        orderCount: number,
+        orderItemCount: number
     ): RelationalTestData {
         const users = this.generateRelationalUsers(userCount);
-        const posts = this.generateRelationalPosts(postCount, users, 0); // postsPerUser no longer used
-        const comments = this.generateRelationalComments(commentCount, users, posts, 0); // commentsPerUser no longer used
+        const orders = this.generateRelationalOrders(orderCount, users);
+        const orderItems = this.generateRelationalOrderItems(orderItemCount, users, orders);
 
         return {
             users,
-            posts,
-            comments
+            orders,
+            orderItems
         };
     }
 
     static generateSingleTableTestData(
         userCount: number,
-        postCount: number,
-        commentCount: number
+        orderCount: number,
+        orderItemCount: number
     ): SingleTableTestData {
         const relationalUsers = this.generateRelationalUsers(userCount);
-        const relationalPosts = this.generateRelationalPosts(postCount, relationalUsers, Math.ceil(postCount / userCount)); // Distribute posts randomly
-        const relationalComments = this.generateRelationalComments(commentCount, relationalUsers, relationalPosts, Math.ceil(commentCount / userCount)); // Distribute comments randomly
+        const relationalOrders = this.generateRelationalOrders(orderCount, relationalUsers);
+        const relationalOrderItems = this.generateRelationalOrderItems(orderItemCount, relationalUsers, relationalOrders);
 
         return {
             users: this.generateSingleTableUsers(relationalUsers),
-            posts: this.generateSingleTablePosts(relationalPosts),
-            comments: this.generateSingleTableComments(relationalComments)
+            orders: this.generateSingleTableOrders(relationalOrders),
+            orderItems: this.generateSingleTableOrderItems(relationalOrderItems)
         };
     }
 
-    static generateTestData(
-        userCount: number,
-        postCount: number,
-        commentCount: number
-    ): CompleteTestData {
-        return {
-            relational: this.generateRelationalTestData(userCount, postCount, commentCount),
-            singleTable: this.generateSingleTableTestData(userCount, postCount, commentCount)
-        };
-    }
 
     static generateRelationalUsers(count: number): RelationalUser[] {
         const users: RelationalUser[] = [];
 
         for (let i = 1; i <= count; i++) {
             const userId = `user-${i.toString().padStart(5, '0')}`;
+            // every 10th user (user-00010, user-00020, user-00030, etc.) is deactivated
+            const status = i % 10 === 0 ? "deactivated" : "active";
             users.push({
-                userId: userId,
                 id: userId,
                 email: `user${i}@example.com`,
+                status: status,
+                pricingPlan: this.PRICING_PLANS[Math.floor(Math.random() * this.PRICING_PLANS.length)],
                 username: `user${i}`,
                 createdAt: new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString()
             });
@@ -98,100 +104,121 @@ export class DataGenerator {
         return users;
     }
 
-    static generateRelationalPosts(count: number, users: RelationalUser[], postsPerUser: number): RelationalPost[] {
-        const posts: RelationalPost[] = [];
+    static generateRelationalOrders(count: number, users: RelationalUser[]): RelationalOrder[] {
+        const orders: RelationalOrder[] = [];
 
         for (let i = 1; i <= count; i++) {
-            // Randomly distribute posts across users 
+            // Randomly distribute orders across users 
             const userId = users[i % users.length].id;
-            const postId = `post-${i.toString().padStart(8, '0')}`;
+            const orderId = `order-${i.toString().padStart(8, '0')}`;
+            const orderNumber = `ORD-${i.toString().padStart(6, '0')}`;
             const createdAt = new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString();
-            const content = this.POST_CONTENT[Math.floor(Math.random() * this.POST_CONTENT.length)];
+            const status = this.ORDER_STATUSES[Math.floor(Math.random() * this.ORDER_STATUSES.length)];
+            const totalAmount = Math.round((Math.random() * 1000 + 50) * 100) / 100; // $50-$1050
 
-            posts.push({
-                postId: postId,
-                id: postId,
+            orders.push({
+                orderId: orderId,
+                id: orderId,
                 userId,
-                content,
+                orderNumber,
+                totalAmount,
+                status,
                 createdAt
             });
         }
 
-        return posts;
+        return orders;
     }
 
-    static generateRelationalComments(count: number, users: RelationalUser[], posts: RelationalPost[], commentsPerUser: number): RelationalComment[] {
-        const comments: RelationalComment[] = [];
+    static generateRelationalOrderItems(count: number, users: RelationalUser[], orders: RelationalOrder[]): RelationalOrderItem[] {
+        const orderItems: RelationalOrderItem[] = [];
 
         for (let i = 1; i <= count; i++) {
-            // Randomly distribute comments across users and posts using modulo
+            // Randomly distribute orderItems across users and orders
             const userId = users[i % users.length].id;
-            const post = posts[i % posts.length];
-            const postId = post.id;
-            const postAuthorUserId = post.userId; // Get the post author's userId
-            const commentId = `comment-${i.toString().padStart(8, '0')}`;
+            const order = orders[i % orders.length];
+            const orderId = order.id;
+            const orderCustomerUserId = order.userId; // Get the order customer's userId
+            const orderItemId = `orderitem-${i.toString().padStart(8, '0')}`;
+            const productId = `prod-${Math.floor(Math.random() * 1000).toString().padStart(4, '0')}`;
+            const productName = this.PRODUCT_NAMES[Math.floor(Math.random() * this.PRODUCT_NAMES.length)];
+            const quantity = Math.floor(Math.random() * 5) + 1; // 1-5 items
+            const unitPrice = Math.round((Math.random() * 200 + 10) * 100) / 100; // $10-$210
             const createdAt = new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString();
-            const content = this.COMMENT_CONTENT[Math.floor(Math.random() * this.COMMENT_CONTENT.length)];
 
-            comments.push({
-                commentId,
-                id: commentId,
-                userId,
-                postId,
-                postAuthorUserId, // Include post author's userId for GSI
-                content,
+            orderItems.push({
+                orderItemId,
+                id: orderItemId,
+                orderId,
+                productId,
+                productName,
+                quantity,
+                unitPrice,
+                orderCustomerUserId, // Include order customer's userId for GSI
                 createdAt
             });
         }
 
-        return comments;
+        return orderItems;
     }
 
 
     static generateSingleTableUsers(users: RelationalUser[]): SingleTableUser[] {
         return users.map(user => ({
-            PK: `${EntityType.USER}#${user.id}`,
-            SK: `${EntityType.USER}#${user.id}`,
+            // main aim is to fill the users screen
+            PK: EntityType.USER + '#' + user.id,
+            SK: user.status + '#' + user.pricingPlan,
             entityType: EntityType.USER,
             id: user.id,
             username: user.username,
             email: user.email,
-            createdAt: user.createdAt
+            createdAt: user.createdAt,
+            status: user.status,
+            pricingPlan: user.pricingPlan,
+
+            // our secondary, less frequent access pattern
+            // second aim is top get all users by email
+            GSI1PK: EntityType.USER,
+            GSI1SK: user.email
         }));
     }
 
-    static generateSingleTablePosts(posts: RelationalPost[]): SingleTablePost[] {
-        return posts.map(post => ({
-            PK: `${EntityType.USER}#${post.userId}`, // User is always the partition key
-            SK: `${EntityType.POST}#${post.createdAt}`, // Static identifier + date as sort key
-            entityType: EntityType.POST,
-            id: post.id,
-            userId: post.userId,
-            content: post.content,
-            createdAt: post.createdAt,
-            datePrefix: post.createdAt.split('T')[0],
+    static generateSingleTableOrders(orders: RelationalOrder[]): SingleTableOrder[] {
+        return orders.map(order => ({
+            PK: EntityType.USER + '#' + order.userId, // User is always the partition key
+            SK: `${EntityType.ORDER}#${order.status}#${order.createdAt}`, // Static identifier + date as sort key
+            entityType: EntityType.ORDER,
+            id: order.id,
+            userId: order.userId,
+            orderNumber: order.orderNumber,
+            totalAmount: order.totalAmount,
+            status: order.status,
+            createdAt: order.createdAt,
+            datePrefix: order.createdAt.split('T')[0],
 
             // our secondary, less frequent access pattern
-            GSI1PK: EntityType.POST,
-            GSI1SK: post.createdAt
+            GSI1PK: EntityType.ORDER,
+            GSI1SK: order.status + '#' + order.createdAt
         }));
     }
 
-    static generateSingleTableComments(comments: RelationalComment[]): SingleTableComment[] {
-        return comments.map(comment => ({
-            PK: `${EntityType.USER}#${comment.userId}`, // User is always the partition key
-            SK: `${EntityType.COMMENT}#${comment.createdAt}`, // Static identifier + date as sort key
-            entityType: EntityType.COMMENT,
-            id: comment.id,
-            userId: comment.userId,
-            postId: comment.postId,
-            content: comment.content,
-            createdAt: comment.createdAt,
-            datePrefix: comment.createdAt.split('T')[0],
+    static generateSingleTableOrderItems(orderItems: RelationalOrderItem[]): SingleTableOrderItem[] {
+        return orderItems.map(orderItem => ({
+            PK: EntityType.USER + '#' + orderItem.orderCustomerUserId, // User is always the partition key
+            SK: `${EntityType.ORDER_ITEM}#${orderItem.createdAt}`, // Static identifier + date as sort key
+            entityType: EntityType.ORDER_ITEM,
+            id: orderItem.id,
+            orderId: orderItem.orderId,
+            productId: orderItem.productId,
+            productName: orderItem.productName,
+            quantity: orderItem.quantity,
+            unitPrice: orderItem.unitPrice,
+            createdAt: orderItem.createdAt,
+            datePrefix: orderItem.createdAt.split('T')[0],
 
             // our secondary, less frequent access pattern
-            GSI1PK: `${EntityType.COMMENT}`,
-            GSI1SK: comment.createdAt
+            GSI1PK: EntityType.ORDER_ITEM,
+            GSI1SK: orderItem.orderId
         }));
     }
 

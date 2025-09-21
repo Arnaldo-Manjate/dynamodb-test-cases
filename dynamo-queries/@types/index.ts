@@ -1,34 +1,39 @@
 // Entity Type Enum
 export enum EntityType {
     USER = 'USER',
-    POST = 'POST',
-    COMMENT = 'COMMENT'
+    ORDER = 'ORDER',
+    ORDER_ITEM = 'ORDER_ITEM'
 }
 
 // Relational Design Types
 export interface RelationalUser {
-    userId: string; // userId
     id: string;
     email: string;
     username: string;
+    status: string;
+    pricingPlan: string;
     createdAt: string;
 }
 
-export interface RelationalPost {
-    postId: string; // postId (missing sort key - demonstrates Point 1)
+export interface RelationalOrder {
+    orderId: string; // orderId (missing sort key - demonstrates Point 1)
     id: string;
     userId: string;
-    content: string;
+    orderNumber: string;
+    totalAmount: number;
+    status: string;
     createdAt: string;
 }
 
-export interface RelationalComment {
-    commentId: string;
+export interface RelationalOrderItem {
+    orderItemId: string;
     id: string;
-    userId: string;
-    postId: string;
-    postAuthorUserId: string; // For GSI: allows querying comments by post author
-    content: string;
+    orderId: string;
+    productId: string;
+    productName: string;
+    quantity: number;
+    unitPrice: number;
+    orderCustomerUserId: string; // For GSI: allows querying orderItems by order customer
     createdAt: string;
 }
 
@@ -37,36 +42,42 @@ export interface RelationalComment {
 export interface SingleTableUser {
     PK: string; // USER#<userId>
     SK: string; // USER#<userId>
-    entityType: EntityType.USER;
     id: string;
     username: string;
+    status: string;
+    pricingPlan: string;
     email: string;
     createdAt: string;
+    entityType: EntityType.USER;
 }
 
-export interface SingleTablePost {
+export interface SingleTableOrder {
     PK: string; // USER#<userId>
-    SK: string; // #POSTS#<date>
-    entityType: EntityType.POST;
+    SK: string; // #ORDER#<date>
+    entityType: EntityType.ORDER;
     id: string;
     userId: string;
-    content: string;
+    orderNumber: string;
+    totalAmount: number;
+    status: string;
     createdAt: string;
     datePrefix: string;
 }
 
-export interface SingleTableComment {
+export interface SingleTableOrderItem {
     PK: string; // USER#<userId>
-    SK: string; // #COMMENTS#<date>
-    entityType: EntityType.COMMENT;
+    SK: string; // #ORDER_ITEM#<date>
+    entityType: EntityType.ORDER_ITEM;
     id: string;
-    userId: string;
-    postId: string;
-    content: string;
+    orderId: string;
+    productId: string;
+    productName: string;
+    quantity: number;
+    unitPrice: number;
     createdAt: string;
     datePrefix: string;
-    GSI1PK?: string; // USER_COMMENTS#<userId> - for getting all user comments
-    GSI1SK?: string; // <createdAt> - for sorting comments by date
+    GSI1PK?: string; // USER_ORDER_ITEMS#<userId> - for getting all user order items
+    GSI1SK?: string; // <createdAt> - for sorting order items by date
 }
 
 
@@ -85,21 +96,21 @@ export interface TestResult {
     error?: string;
     // For getUserScreenData results
     user?: any;
-    posts?: any[];
-    comments?: any[];
+    orders?: any[];
+    orderItems?: any[];
 }
 
 // Data Generation Result Types
 export interface RelationalTestData {
     users: RelationalUser[];
-    posts: RelationalPost[];
-    comments: RelationalComment[];
+    orders: RelationalOrder[];
+    orderItems: RelationalOrderItem[];
 }
 
 export interface SingleTableTestData {
     users: SingleTableUser[];
-    posts: SingleTablePost[];
-    comments: SingleTableComment[];
+    orders: SingleTableOrder[];
+    orderItems: SingleTableOrderItem[];
 }
 
 export interface CompleteTestData {

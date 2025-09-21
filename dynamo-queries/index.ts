@@ -7,8 +7,8 @@ async function main() {
     // Default configuration
     const config = {
         userCount: 5,
-        postCount: 20,
-        commentCount: 50,
+        orderCount: 20,
+        orderItemCount: 50,
         skipDataInsertion: false
     };
 
@@ -34,12 +34,12 @@ async function main() {
                 config.userCount = parseInt(args[i + 1]);
                 i++; // Skip the value on next iteration
                 break;
-            case '--post-count':
-                config.postCount = parseInt(args[i + 1]);
+            case '--order-count':
+                config.orderCount = parseInt(args[i + 1]);
                 i++; // Skip the value on next iteration
                 break;
-            case '--comment-count':
-                config.commentCount = parseInt(args[i + 1]);
+            case '--orderitem-count':
+                config.orderItemCount = parseInt(args[i + 1]);
                 i++; // Skip the value on next iteration
                 break;
             case '--skip-data-insertion':
@@ -50,12 +50,12 @@ async function main() {
     }
 
     console.log(`🎯 DynamoDB Design Patterns - 6 Points Side by Side`);
-    console.log(`Configuration: ${config.userCount} users, ${config.postCount} posts, ${config.commentCount} comments`);
+    console.log(`Configuration: ${config.userCount} users, ${config.orderCount} orders, ${config.orderItemCount} orderItems`);
     console.log(`Distribution: Random distribution across users\n`);
 
     try {
         const testService = new TestService();
-        await testService.runAllTests(config.userCount, config.postCount, config.commentCount, config.skipDataInsertion);
+        await testService.runAllTests(config.userCount, config.orderCount, config.orderItemCount, config.skipDataInsertion);
     } catch (error) {
         console.error(error);
     }

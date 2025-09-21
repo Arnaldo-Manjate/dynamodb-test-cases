@@ -11,17 +11,17 @@ export class TestService {
     constructor(region: string = 'us-east-1') {
         this.relationalDAO = new RelationalDAO(
             'users-relational',
-            'posts-relational',
-            'comments-relational',
+            'orders-relational',
+            'orderitems-relational',
             region
         );
-        this.singleTableDAO = new SingleTableDAO('single-table-social', region);
+        this.singleTableDAO = new SingleTableDAO('single-table-ecommerce', region);
     }
 
     async runAllTests(
         userCount: number = 5,
-        postCount: number = 20,
-        commentCount: number = 50,
+        orderCount: number = 20,
+        orderItemCount: number = 50,
         skipDataInsertion: boolean = false
     ): Promise<void> {
         this.log('Starting DynamoDB Design Pattern Tests');
@@ -31,11 +31,11 @@ export class TestService {
                 const hasData = await this.checkIfDataExists();
                 if (!hasData) {
                     // Generate test data
-                    this.log(`Generating test data: ${userCount} users, ${postCount} posts, ${commentCount} comments...`);
+                    this.log(`Generating test data: ${userCount} users, ${orderCount} orders, ${orderItemCount} orderItems...`);
                     const testData: CompleteTestData = DataGenerator.generateTestData(
                         userCount,
-                        postCount,
-                        commentCount
+                        orderCount,
+                        orderItemCount
                     );
 
                     // Insert data
@@ -88,8 +88,8 @@ export class TestService {
     private async clearRelationalTables(): Promise<void> {
         const tables = [
             this.relationalDAO.getUsersTableName,
-            this.relationalDAO.getPostsTableName,
-            this.relationalDAO.getCommentsTableName
+            this.relationalDAO.getOrdersTableName,
+            this.relationalDAO.getOrderItemsTableName
         ];
 
         for (const tableName of tables) {
@@ -112,13 +112,13 @@ export class TestService {
                 case 'users-relational':
                     keyAttributes = ['userId'];
                     break;
-                case 'posts-relational':
-                    keyAttributes = ['postId'];
+                case 'orders-relational':
+                    keyAttributes = ['orderId'];
                     break;
-                case 'comments-relational':
-                    keyAttributes = ['postId', 'commentId'];
+                case 'orderitems-relational':
+                    keyAttributes = ['orderId', 'orderItemId'];
                     break;
-                case 'single-table-social':
+                case 'single-table-ecommerce':
                     keyAttributes = ['PK', 'SK'];
                     break;
                 default:
@@ -177,15 +177,15 @@ export class TestService {
         await this.relationalDAO.batchCreateUsers(testData.relational.users);
         await this.singleTableDAO.batchCreateItems(testData.singleTable.users);
 
-        // Insert posts
-        this.log('  - Inserting posts...');
-        await this.relationalDAO.batchCreatePosts(testData.relational.posts);
-        await this.singleTableDAO.batchCreateItems(testData.singleTable.posts);
+        // Insert orders
+        this.log('  - Inserting orders...');
+        await this.relationalDAO.batchCreateOrders(testData.relational.orders);
+        await this.singleTableDAO.batchCreateItems(testData.singleTable.orders);
 
-        // Insert comments
-        this.log('  - Inserting comments...');
-        await this.relationalDAO.batchCreateComments(testData.relational.comments);
-        await this.singleTableDAO.batchCreateItems(testData.singleTable.comments);
+        // Insert orderItems
+        this.log('  - Inserting orderItems...');
+        await this.relationalDAO.batchCreateOrderItems(testData.relational.orderItems);
+        await this.singleTableDAO.batchCreateItems(testData.singleTable.orderItems);
 
 
         this.log('Data insertion complete!');
@@ -196,10 +196,14 @@ export class TestService {
         try {
             // Quick check - try to get one user from each table
             const userCheck = await this.relationalDAO.getUserById('user-00001');
-            const postCheck = await this.relationalDAO.getUserPosts('user-00001');
+            const orderCheck = await this.relationalDAO.getUserOrders('user-00001');
+            // const orderItemsCheck = await this.relationalDAO.getUserOrderItems('user-00001');
+            // const singleTableUserCheck = await this.singleTableDAO.getUserById('user-00001');
+
+
 
             // If we get items back, data exists
-            return userCheck.success && postCheck.success && postCheck.itemCount > 0;
+            return userCheck.success && orderCheck.success && orderCheck.itemCount > 0;
         } catch (error) {
             return false; // Assume no data if check fails
         }
@@ -221,8 +225,8 @@ export class TestService {
         this.log('\n## Design Comparison: Static Identifiers vs Multiple Network Requests\n');
         this.log('| Aspect | Relational Design | Single Table Design |');
         this.log('|--------|-------------------|----------------------|');
-        this.log('| **Data Storage** | Multiple tables (users, posts, comments) | Single table with composite keys |');
-        this.log('| **Access Pattern** | 3+ separate queries (user + posts + comments) | Single query with PK/SK filtering |');
+        this.log('| **Data Storage** | Multiple tables (users, orders, orderItems) | Single table with composite keys |');
+        this.log('| **Access Pattern** | 3+ separate queries (user + orders + orderItems) | Single query with PK/SK filtering |');
         this.log('| **Key Structure** | Simple primary keys per table | PK: `USER#userId`, SK: `#ENTITY#date` |');
         this.log('| **Data Location** | Distributed across tables | Co-located by partition key |');
         this.log('| **Query Complexity** | Multiple round trips | Single efficient query |');
@@ -237,16 +241,16 @@ export class TestService {
         this.log('\n🔍 Point 2: Inefficient Access Patterns vs Strategic Design');
         this.log('='.repeat(60));
 
-        const badResult = await this.relationalDAO.getAllPosts();
-        const goodResult = await this.singleTableDAO.getAllPosts();
+        const badResult = await this.relationalDAO.getAllOrders();
+        const goodResult = await this.singleTableDAO.getAllOrders();
 
         // Comparison Table
         this.log('\n## Design Comparison: Inefficient Access Patterns vs Strategic Design\n');
         this.log('| Aspect | Relational Design | Single Table Design |');
         this.log('|--------|-------------------|----------------------|');
         this.log('| **Access Pattern** | Table scan (no efficient index) | Strategic GSI usage |');
-        this.log('| **Query Type** | Scan entire posts table | Query on EntityTypeIndex |');
-        this.log('| **Efficiency** | Scans all items to find posts | Direct query for POST entities |');
+        this.log('| **Query Type** | Scan entire orders table | Query on EntityTypeIndex |');
+        this.log('| **Efficiency** | Scans all items to find orders | Direct query for ORDER entities |');
         this.log('| **Cost Impact** | High RCU consumption | Lower RCU consumption |');
         this.log('| **Performance** | Slow, expensive operation | Fast, efficient query |');
         this.log('| **Results** | ' + `${badResult.duration}ms, ${badResult.consumedCapacity?.readCapacityUnits || 'N/A'} RCU` + ' | ' + `${goodResult.duration}ms, ${goodResult.consumedCapacity?.readCapacityUnits || 'N/A'} RCU` + ' |');
@@ -265,17 +269,17 @@ export class TestService {
 
         const testUserId = 'user-00001';
 
-        const badResult = await this.relationalDAO.getAllUserComments(testUserId);
-        const goodResult = await this.singleTableDAO.getAllUserComments(testUserId);
+        const badResult = await this.relationalDAO.getAllUserOrderItems(testUserId);
+        const goodResult = await this.singleTableDAO.getAllUserOrderItems(testUserId);
 
         // Comparison Table
         this.log('\n## Design Comparison: GSI Overloading vs Multiple Queries\n');
         this.log('| Aspect | Relational Design | Single Table Design |');
         this.log('|--------|-------------------|----------------------|');
         this.log('| **Query Pattern** | Multiple queries (N+1 problem) | Single GSI query |');
-        this.log('| **Access Steps** | 1. Get user posts (GSI), 2. Get comments per post | Overloaded GSI1 |');
+        this.log('| **Access Steps** | 1. Get user orders (GSI), 2. Get orderItems per order | Overloaded GSI1 |');
         this.log('| **GSI Usage** | GSI per table + multiple queries | Single overloaded GSI |');
-        this.log('| **Key Structure** | GSI1PK: USER#userId, GSI1SK: createdAt | GSI1PK: USER_COMMENTS#userId |');
+        this.log('| **Key Structure** | GSI1PK: USER#userId, GSI1SK: createdAt | GSI1PK: USER_ORDER_ITEMS#userId |');
         this.log('| **Efficiency** | High network overhead | Single efficient query |');
         this.log('| **Use Case** | Frequent access patterns | Infrequent access patterns |');
         this.log('| **Results** | ' + `${badResult.duration}ms, ${badResult.consumedCapacity?.readCapacityUnits || 'N/A'} RCU` + ' | ' + `${goodResult.duration}ms, ${goodResult.consumedCapacity?.readCapacityUnits || 'N/A'} RCU` + ' |');
@@ -304,8 +308,8 @@ export class TestService {
         this.log('|---------|---------------|-----------------|');
         // Calculate total requests for relational design
         const relationalRequests = relationalResult.requestCount || (
-            relationalResult.posts ?
-                // 2 base requests (user + posts) + 1 for comments
+            relationalResult.orders ?
+                // 2 base requests (user + orders) + 1 for orderItems
                 2 + 1 :
                 1
         );

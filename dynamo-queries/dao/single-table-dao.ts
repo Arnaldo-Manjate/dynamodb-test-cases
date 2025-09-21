@@ -33,208 +33,99 @@ export class SingleTableDAO extends BaseDAO {
     get getTableName(): string { return this.tableName; }
     get getClient() { return this.client; }
 
-    // Point 1: Proper Sort Keys - Good Pattern
-    // Efficient queries with PK + SK combination
-    async getUserPosts(userId: string): Promise<TestResult> {
-        return this.measureOperation(
-            async () => {
-                // GOOD: Using PK + SK pattern for efficient queries
-                const command = new QueryCommand({
-                    TableName: this.tableName,
-                    KeyConditionExpression: 'PK = :pk AND begins_with(SK, :skPrefix)',
-                    ExpressionAttributeValues: {
-                        ':pk': `USER#${userId}`,
-                        ':skPrefix': 'POSTS#'
-                    },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-                return await this.client.send(command);
-            },
-            'GetUserPosts_WithSortKey',
-            'SingleTable',
-            1
-        );
-    }
 
-    // Point 2: Generic Naming - Good Pattern
-    // Using generic PK/SK instead of specific field names
+    // Will be slower than singleTable getItem but offers more flexible 
+    // access patterns for the user entity.
     async getUserById(userId: string): Promise<TestResult> {
         return this.measureOperation(
             async () => {
                 // GOOD: Generic PK/SK pattern provides flexibility
-                const command = new GetCommand({
-                    TableName: this.tableName,
-                    Key: {
-                        PK: `USER#${userId}`,
-                        SK: `USER#${userId}`
-                    },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-                return await this.client.send(command);
-            },
-            'GetUser_GenericNaming',
-            'SingleTable',
-            1
-        );
-    }
-
-    // Point 3: Strategic GSI Usage - Good Pattern
-    // Fewer GSIs needed due to sort key power
-    async getPostsByDateRange(userId: string, startDate: string, endDate: string): Promise<TestResult> {
-        return this.measureOperation(
-            async () => {
-                // GOOD: Can use main table efficiently with PK + SK range
-                const command = new QueryCommand({
-                    TableName: this.tableName,
-                    KeyConditionExpression: 'PK = :pk AND SK BETWEEN :startSk AND :endSk',
-                    ExpressionAttributeValues: {
-                        ':pk': `USER#${userId}`,
-                        ':startSk': `POST#00000000#${startDate}`,
-                        ':endSk': `POST#99999999#${endDate}`
-                    },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-                return await this.client.send(command);
-            },
-            'GetPostsByDateRange_NoGSINeeded',
-            'SingleTable',
-            1
-        );
-    }
-
-    // Point 4: Generic GSI Names - Good Pattern
-    // Using generic names for infrequently accessed patterns
-    async getUserPostsWithGSI(userId: string): Promise<TestResult> {
-        return this.measureOperation(
-            async () => {
-                // GOOD: No GSI needed - can use main table efficiently
                 const command = new QueryCommand({
                     TableName: this.tableName,
                     KeyConditionExpression: 'PK = :pk AND begins_with(SK, :skPrefix)',
                     ExpressionAttributeValues: {
-                        ':pk': `USER#${userId}`,
-                        ':skPrefix': 'POST#'
+                        ':pk': `${EntityType.USER}#${userId}`,
+                        ':skPrefix': "active#"
                     },
                     ReturnConsumedCapacity: "TOTAL"
                 });
                 return await this.client.send(command);
             },
-            'GetUserPosts_NoGSINeeded',
+            'GetUserById',
             'SingleTable',
             1
         );
     }
 
-    // ========================================
-    // POINTS 3 & 4 MERGED: STATIC IDENTIFIERS + POWERFUL QUERIES
-    // Demonstrates: How static identifiers on PK and SK enable powerful queries
-    // Single query gets all user data while maintaining individual access patterns
-    // ========================================
+    async getAllUsers(): Promise<TestResult> {
+        return this.measureOperation(
+            async () => {
+                // GOOD: Generic PK/SK pattern provides flexibility
+                const command = new QueryCommand({
+                    TableName: this.tableName,
+                    IndexName: 'GSI1',
+                    KeyConditionExpression: 'GSI1PK = :pk',
+                    ExpressionAttributeValues: {
+                        ':pk': `${EntityType.USER}`,
+                    },
+                    ReturnConsumedCapacity: "TOTAL"
+                });
+                return await this.client.send(command);
+            },
+            'GetAllUsers',
+            'SingleTable',
+            1
+        );
+    }
 
-    // Point 3 & 4: Main Table for All User Data - Excellent Pattern
-    // Using main table with PK=USER#userId and SK begins_with to get all entity types in one query
-    // 
-    // Key Structure:
-    // - PK: USER#userId (Partition Key) - groups all entities for a specific user
-    // - SK: #ENTITY#date (Sort Key) - enables efficient queries and date-based ordering
-    //
-    // This demonstrates the power of proper single table design - no GSI needed!
+    async getUsersByStatus(status: string): Promise<TestResult> {
+        return this.measureOperation(
+            async () => {
+                // GOOD: Generic PK/SK pattern provides flexibility
+                const command = new QueryCommand({
+                    TableName: this.tableName,
+                    IndexName: 'GSI1',
+                    KeyConditionExpression: 'GSI1PK = :pk AND begins_with(GSI1SK, :skPrefix)',
+                    ExpressionAttributeValues: {
+                        ':pk': `${EntityType.USER}`,
+                        ':skPrefix': `${status}#`
+                    },
+                    ReturnConsumedCapacity: "TOTAL"
+                });
+                return await this.client.send(command);
+            },
+            'GetUserByStatus',
+            'SingleTable',
+            1
+        );
+    }
+
     async getUserScreenData(userId: string): Promise<TestResult> {
         return this.measureOperation(
             async () => {
-                // EXCELLENT: Single query using main table with PK=USER#userId
+                //  Single query using main table with PK=USER#userId
                 // This gets all entity types for a user in one efficient query
                 const command = new QueryCommand({
                     TableName: this.tableName,
                     KeyConditionExpression: 'PK = :pk',
                     ExpressionAttributeValues: {
-                        ':pk': `USER#${userId}`
+                        ':pk': `${userId}`,
+                        // make the sort key start with the user id
                     },
                     ReturnConsumedCapacity: "TOTAL"
                 });
 
-                const result = await this.client.send(command);
-
-                // Efficient: Loop once and push to right arrays
-                const posts: any[] = [];
-                const comments: any[] = [];
-
-                if (result.Items) {
-                    for (const item of result.Items) {
-                        switch (item.entityType) {
-                            case EntityType.POST:
-                                posts.push(item);
-                                break;
-                            case EntityType.COMMENT:
-                                comments.push(item);
-                                break;
-                        }
-                    }
-                }
-
-                return {
-                    posts,
-                    comments,
-                    ConsumedCapacity: result.ConsumedCapacity,
-                    Items: result.Items || [],
-                    Count: result.Count || 0,
-                    requestCount: 1 // Single query gets all data
-                };
-            },
-            'GetUserScreenData_MainTable_SingleQuery_WithFilter',
-            'SingleTable',
-            1
-        );
-    }
-
-    // Individual access patterns maintained for specific entity queries
-    // These demonstrate that we can still query individual entity types efficiently
-    async getUserPostsOnly(userId: string): Promise<TestResult> {
-        return this.measureOperation(
-            async () => {
-                // GOOD: Can still query just posts efficiently
-                const command = new QueryCommand({
-                    TableName: this.tableName,
-                    KeyConditionExpression: 'PK = :pk',
-                    ExpressionAttributeValues: {
-                        ':pk': `POST#${userId}`
-                    },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
                 return await this.client.send(command);
             },
-            'GetUserPostsOnly_IndividualAccess',
+            'GetUserScreenData',
             'SingleTable',
             1
         );
     }
-
-    async getUserCommentsOnly(userId: string): Promise<TestResult> {
-        return this.measureOperation(
-            async () => {
-                // GOOD: Can still query just comments efficiently
-                const command = new QueryCommand({
-                    TableName: this.tableName,
-                    KeyConditionExpression: 'PK = :pk',
-                    ExpressionAttributeValues: {
-                        ':pk': `COMMENT#${userId}`
-                    },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-                return await this.client.send(command);
-            },
-            'GetUserCommentsOnly_IndividualAccess',
-            'SingleTable',
-            1
-        );
-    }
-
-
-
 
     // Efficient Access Patterns - Good Pattern
     // Strategic GSI usage for global queries
-    async getAllPosts(): Promise<TestResult> {
+    async getAllOrders(): Promise<TestResult> {
         return this.measureOperation(
             async () => {
                 // GOOD: Efficient GSI query instead of scan
@@ -243,48 +134,34 @@ export class SingleTableDAO extends BaseDAO {
                     IndexName: 'GSI1',
                     KeyConditionExpression: 'GSI1PK = :pk',
                     ExpressionAttributeValues: {
-                        ':pk': `${EntityType.POST}`
+                        ':pk': `${EntityType.ORDER}`
                     },
                     ReturnConsumedCapacity: "TOTAL"
                 });
                 return await this.client.send(command);
             },
-            'GetAllPosts_EfficientGSI',
+            'GetAllOrders_EfficientGSI',
             'SingleTable',
             1
         );
     }
 
-
-
-    // Data insertion methods
-    async createUser(user: any): Promise<TestResult> {
+    async getAllUserOrderItems(userId: string): Promise<TestResult> {
         return this.measureOperation(
             async () => {
-                const command = new PutCommand({
+                // GOOD: Using overloaded GSI1 for infrequent access pattern
+                const command = new QueryCommand({
                     TableName: this.tableName,
-                    Item: user,
+                    IndexName: 'GSI1',
+                    KeyConditionExpression: 'GSI1PK = :gsi1pk',
+                    ExpressionAttributeValues: {
+                        ':gsi1pk': EntityType.ORDER_ITEM
+                    },
                     ReturnConsumedCapacity: "TOTAL"
                 });
                 return await this.client.send(command);
             },
-            'CreateUser',
-            'SingleTable',
-            1
-        );
-    }
-
-    async createPost(post: any): Promise<TestResult> {
-        return this.measureOperation(
-            async () => {
-                const command = new PutCommand({
-                    TableName: this.tableName,
-                    Item: post,
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-                return await this.client.send(command);
-            },
-            'CreatePost',
+            'GetAllUserOrderItems_GSI1',
             'SingleTable',
             1
         );
@@ -294,26 +171,4 @@ export class SingleTableDAO extends BaseDAO {
         return this.batchWriteWithChunking(items, this.tableName, 'BatchCreateItems');
     }
 
-    // Point 6: GSI Overloading for Infrequent Access Patterns
-    // Using GSI1 to efficiently get all comments by a user across all posts
-    async getAllUserComments(userId: string): Promise<TestResult> {
-        return this.measureOperation(
-            async () => {
-                // GOOD: Using overloaded GSI1 for infrequent access pattern
-                const command = new QueryCommand({
-                    TableName: this.tableName,
-                    IndexName: 'GSI1',
-                    KeyConditionExpression: 'GSI1PK = :gsi1pk',
-                    ExpressionAttributeValues: {
-                        ':gsi1pk': `USER_COMMENTS#${userId}`
-                    },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-                return await this.client.send(command);
-            },
-            'GetAllUserComments_GSI1',
-            'SingleTable',
-            1
-        );
-    }
 } 

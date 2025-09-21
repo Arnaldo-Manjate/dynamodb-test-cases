@@ -21,14 +21,14 @@ import { QueryCommand, GetCommand, ScanCommand, PutCommand, BatchWriteCommand } 
  */
 export class RelationalDAO extends BaseDAO {
     private usersTableName: string;
-    private postsTableName: string;
-    private commentsTableName: string;
+    private ordersTableName: string;
+    private orderItemsTableName: string;
 
-    constructor(usersTableName: string, postsTableName: string, commentsTableName: string, region: string = 'us-east-1') {
+    constructor(usersTableName: string, ordersTableName: string, orderItemsTableName: string, region: string = 'us-east-1') {
         super(region);
         this.usersTableName = usersTableName;
-        this.postsTableName = postsTableName;
-        this.commentsTableName = commentsTableName;
+        this.ordersTableName = ordersTableName;
+        this.orderItemsTableName = orderItemsTableName;
     }
 
     protected getDesignType(): 'Relational' {
@@ -37,21 +37,44 @@ export class RelationalDAO extends BaseDAO {
 
     // Getter methods for table names and client access
     get getUsersTableName(): string { return this.usersTableName; }
-    get getPostsTableName(): string { return this.postsTableName; }
-    get getCommentsTableName(): string { return this.commentsTableName; }
+    get getOrdersTableName(): string { return this.ordersTableName; }
+    get getOrderItemsTableName(): string { return this.orderItemsTableName; }
     get getClient() { return this.client; }
 
-    // Point 1: Missing Sort Keys - Bad Pattern
-    // This forces GSI creation for date-based queries
-    async getUserPosts(userId: string): Promise<TestResult> {
+    async getUsersByStatus(status: string): Promise<TestResult> {
         return this.measureOperation(
             async () => {
-                // BAD: Main table's PK is postId, so we need a GSI to query by userId
+                // BAD: Main table's PK is orderId, so we need a GSI to query by userId
                 // This means maintaining an extra index just for this access pattern
 
                 // BAD: Have to scan because we can't query by non-key attribute
                 const command = new ScanCommand({
-                    TableName: this.postsTableName,
+                    TableName: this.usersTableName,
+                    FilterExpression: 'status = :status',
+                    ExpressionAttributeValues: { ':status': status },
+                    ReturnConsumedCapacity: "TOTAL"
+                });
+
+                const result = await this.client.send(command);
+                return result;
+            },
+            'GetUsersByStatus',
+            'Relational',
+            1
+        );
+    }
+
+    // Point 1: Missing Sort Keys - Bad Pattern
+    // This forces GSI creation for date-based queries
+    async getUserOrders(userId: string): Promise<TestResult> {
+        return this.measureOperation(
+            async () => {
+                // BAD: Main table's PK is orderId, so we need a GSI to query by userId
+                // This means maintaining an extra index just for this access pattern
+
+                // BAD: Have to scan because we can't query by non-key attribute
+                const command = new ScanCommand({
+                    TableName: this.ordersTableName,
                     FilterExpression: 'userId = :userId',
                     ExpressionAttributeValues: { ':userId': userId },
                     ReturnConsumedCapacity: "TOTAL"
@@ -60,7 +83,7 @@ export class RelationalDAO extends BaseDAO {
                 const result = await this.client.send(command);
                 return result;
             },
-            'GetUserPosts_NoSortKey',
+            'GetUserOrders_NoSortKey',
             'Relational',
             1
         );
@@ -87,14 +110,14 @@ export class RelationalDAO extends BaseDAO {
 
     // Point 3: GSI Necessity Due to Poor Schema - Bad Pattern
     // Need GSI because we're missing sort keys
-    async getPostsByDateRange(userId: string, startDate: string, endDate: string): Promise<TestResult> {
+    async getOrdersByDateRange(userId: string, startDate: string, endDate: string): Promise<TestResult> {
         return this.measureOperation(
             async () => {
                 // BAD: Forced to use GSI because no sort key on main table
-                // The GSI has userId as PK and createdAt as SK, but main table has postId as PK
+                // The GSI has userId as PK and createdAt as SK, but main table has orderId as PK
                 const command = new QueryCommand({
-                    TableName: this.postsTableName,
-                    IndexName: 'PostsByDateIndex', // Forced GSI usage
+                    TableName: this.ordersTableName,
+                    IndexName: 'OrdersByDateIndex', // Forced GSI usage
                     KeyConditionExpression: 'userId = :userId AND #createdAt BETWEEN :startDate AND :endDate',
                     ExpressionAttributeNames: { '#createdAt': 'createdAt' },
                     ExpressionAttributeValues: {
@@ -106,7 +129,7 @@ export class RelationalDAO extends BaseDAO {
                 });
                 return await this.client.send(command);
             },
-            'GetPostsByDateRange_GSIRequired',
+            'GetOrdersByDateRange_GSIRequired',
             'Relational',
             1
         );
@@ -114,21 +137,21 @@ export class RelationalDAO extends BaseDAO {
 
     // Point 4: GSI Naming Anti-patterns - Bad Pattern
     // Using descriptive names instead of generic names
-    async getUserPostsWithGSI(userId: string): Promise<TestResult> {
+    async getUserOrdersWithGSI(userId: string): Promise<TestResult> {
         return this.measureOperation(
             async () => {
                 // BAD: Descriptive GSI name instead of generic
                 // BAD: Forced to use GSI because main table schema is poor
                 const command = new QueryCommand({
-                    TableName: this.postsTableName,
-                    IndexName: 'PostsByDateIndex', // Should be GSI1, GSI2, etc.
+                    TableName: this.ordersTableName,
+                    IndexName: 'OrdersByDateIndex', // Should be GSI1, GSI2, etc.
                     KeyConditionExpression: 'userId = :userId',
                     ExpressionAttributeValues: { ':userId': userId },
                     ReturnConsumedCapacity: "TOTAL"
                 });
                 return await this.client.send(command);
             },
-            'GetUserPosts_DescriptiveGSI',
+            'GetUserOrders_DescriptiveGSI',
             'Relational',
             1
         );
@@ -138,17 +161,17 @@ export class RelationalDAO extends BaseDAO {
 
     // Inefficient Access Patterns - Bad Pattern
     // Scan operation due to poor schema design
-    async getAllPosts(): Promise<TestResult> {
+    async getAllOrders(): Promise<TestResult> {
         return this.measureOperation(
             async () => {
                 // BAD: Scan operation because no efficient access pattern
                 const command = new ScanCommand({
-                    TableName: this.postsTableName,
+                    TableName: this.ordersTableName,
                     ReturnConsumedCapacity: "TOTAL"
                 });
                 return await this.client.send(command);
             },
-            'GetAllPosts_ScanRequired',
+            'GetAllOrders_ScanRequired',
             'Relational',
             1
         );
@@ -178,50 +201,50 @@ export class RelationalDAO extends BaseDAO {
                 });
                 const user = await this.client.send(userCommand);
                 requestCount++;
-                // 2. Get user posts (requires GSI since main table has postId as PK)
-                const postsCommand = new QueryCommand({
-                    TableName: this.postsTableName,
-                    IndexName: 'PostsByUserIdIndex',
+                // 2. Get user orders (requires GSI since main table has orderId as PK)
+                const ordersCommand = new QueryCommand({
+                    TableName: this.ordersTableName,
+                    IndexName: 'OrdersByUserIdIndex',
                     KeyConditionExpression: 'userId = :userId',
                     ExpressionAttributeValues: { ':userId': userId },
                     ReturnConsumedCapacity: "TOTAL"
                 });
-                const posts = await this.client.send(postsCommand);
+                const orders = await this.client.send(ordersCommand);
                 requestCount++;
-                // 3. Get comments on user's posts using GSI (single query instead of N+1)
-                const commentsCommand = new QueryCommand({
-                    TableName: this.commentsTableName,
-                    IndexName: 'CommentsByPostAuthorIndex',
-                    KeyConditionExpression: 'postAuthorUserId = :userId',
+                // 3. Get orderItems for user's orders using GSI (single query instead of N+1)
+                const orderItemsCommand = new QueryCommand({
+                    TableName: this.orderItemsTableName,
+                    IndexName: 'OrderItemsByOrderCustomerIndex',
+                    KeyConditionExpression: 'orderCustomerUserId = :userId',
                     ExpressionAttributeValues: { ':userId': userId },
                     ReturnConsumedCapacity: "TOTAL"
                 });
                 requestCount++;
-                const commentsResult = await this.client.send(commentsCommand);
-                const allComments = commentsResult.Items || [];
-                const commentsCapacity = commentsResult.ConsumedCapacity?.CapacityUnits || 0;
+                const orderItemsResult = await this.client.send(orderItemsCommand);
+                const allOrderItems = orderItemsResult.Items || [];
+                const orderItemsCapacity = orderItemsResult.ConsumedCapacity?.CapacityUnits || 0;
 
                 // Return combined result with proper consumed capacity
                 const totalCapacity = (user.ConsumedCapacity?.CapacityUnits || 0) +
-                    (posts.ConsumedCapacity?.CapacityUnits || 0) +
-                    commentsCapacity;
+                    (orders.ConsumedCapacity?.CapacityUnits || 0) +
+                    orderItemsCapacity;
 
                 // Request count is tracked by incrementRequestCount() in base DAO
                 // Each call to client.send() increments the counter
 
                 return {
                     user: user.Item,
-                    posts: posts.Items,
-                    comments: allComments,
+                    orders: orders.Items,
+                    orderItems: allOrderItems,
                     ConsumedCapacity: {
                         CapacityUnits: totalCapacity
                     },
                     Items: [
                         user.Item,
-                        ...(posts.Items || []),
-                        ...allComments
+                        ...(orders.Items || []),
+                        ...allOrderItems
                     ],
-                    Count: 1 + (posts.Count || 0) + allComments.length,
+                    Count: 1 + (orders.Count || 0) + allOrderItems.length,
                     requestCount: requestCount
                 };
             },
@@ -248,17 +271,17 @@ export class RelationalDAO extends BaseDAO {
         );
     }
 
-    async createPost(post: any): Promise<TestResult> {
+    async createOrder(order: any): Promise<TestResult> {
         return this.measureOperation(
             async () => {
                 const command = new PutCommand({
-                    TableName: this.postsTableName,
-                    Item: post,
+                    TableName: this.ordersTableName,
+                    Item: order,
                     ReturnConsumedCapacity: "TOTAL"
                 });
                 return await this.client.send(command);
             },
-            'CreatePost',
+            'CreateOrder',
             'Relational',
             1
         );
@@ -268,62 +291,63 @@ export class RelationalDAO extends BaseDAO {
         return this.batchWriteWithChunking(users, this.usersTableName, 'BatchCreateUsers');
     }
 
-    async batchCreatePosts(posts: any[]): Promise<TestResult> {
-        return this.batchWriteWithChunking(posts, this.postsTableName, 'BatchCreatePosts');
+    async batchCreateOrders(orders: any[]): Promise<TestResult> {
+        return this.batchWriteWithChunking(orders, this.ordersTableName, 'BatchCreateOrders');
     }
 
-    async batchCreateComments(comments: any[]): Promise<TestResult> {
-        return this.batchWriteWithChunking(comments, this.commentsTableName, 'BatchCreateComments');
+    async batchCreateOrderItems(orderItems: any[]): Promise<TestResult> {
+        return this.batchWriteWithChunking(orderItems, this.orderItemsTableName, 'BatchCreateOrderItems');
     }
 
 
     // Point 6: Multiple Queries Required - Bad Pattern
-    // Need to first get all posts by user, then query each post for comments
-    async getAllUserComments(userId: string): Promise<TestResult> {
+    // Need to first get all orders by user, then query each order for orderItems
+    async getAllUserOrderItems(userId: string): Promise<TestResult> {
         return this.measureOperation(
             async () => {
                 // BAD: Multiple network requests required
-                // 1. First get all posts by the user
-                const postsCommand = new QueryCommand({
-                    TableName: this.postsTableName,
-                    IndexName: 'PostsByDateIndex',
+                // 1. First get all orders by the user
+                const ordersCommand = new QueryCommand({
+                    TableName: this.ordersTableName,
+                    IndexName: 'OrdersByDateIndex',
                     KeyConditionExpression: 'userId = :userId',
                     ExpressionAttributeValues: { ':userId': userId },
                     ReturnConsumedCapacity: "TOTAL"
                 });
-                const posts = await this.client.send(postsCommand);
+                const orders = await this.client.send(ordersCommand);
 
-                // 2. Then get comments for each post
-                let allComments: any[] = [];
-                let totalCapacity = posts.ConsumedCapacity?.CapacityUnits || 0;
+                // 2. Then get orderItems for each order
+                let allOrderItems: any[] = [];
+                let totalCapacity = orders.ConsumedCapacity?.CapacityUnits || 0;
 
-                if (posts.Items && posts.Items.length > 0) {
-                    for (const post of posts.Items) {
-                        const commentsCommand = new QueryCommand({
-                            TableName: this.commentsTableName,
-                            KeyConditionExpression: 'postId = :postId',
+                if (orders.Items && orders.Items.length > 0) {
+                    for (const order of orders.Items) {
+                        const orderItemsCommand = new QueryCommand({
+                            TableName: this.orderItemsTableName,
+                            IndexName: 'OrderItemsByOrderCustomerIndex',
+                            KeyConditionExpression: 'orderCustomerUserId = :orderCustomerUserId',
                             ExpressionAttributeValues: {
-                                ':postId': post.postId
+                                ':orderCustomerUserId': order.userId
                             },
                             ReturnConsumedCapacity: "TOTAL"
                         });
-                        const postComments = await this.client.send(commentsCommand);
-                        if (postComments.Items) {
-                            allComments.push(...postComments.Items);
+                        const orderOrderItems = await this.client.send(orderItemsCommand);
+                        if (orderOrderItems.Items) {
+                            allOrderItems.push(...orderOrderItems.Items);
                         }
-                        totalCapacity += postComments.ConsumedCapacity?.CapacityUnits || 0;
+                        totalCapacity += orderOrderItems.ConsumedCapacity?.CapacityUnits || 0;
                     }
                 }
 
                 return {
-                    Items: allComments,
-                    Count: allComments.length,
+                    Items: allOrderItems,
+                    Count: allOrderItems.length,
                     ConsumedCapacity: {
                         CapacityUnits: totalCapacity
                     }
                 };
             },
-            'GetAllUserComments_MultipleQueries',
+            'GetAllUserOrderItems_MultipleQueries',
             'Relational',
             1
         );
