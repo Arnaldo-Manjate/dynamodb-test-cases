@@ -184,9 +184,13 @@ export class DataGenerator {
     }
 
     static generateSingleTableOrders(orders: RelationalOrder[]): SingleTableOrder[] {
+        function generateShardId(): string {
+            return (Math.floor(Math.random() * 20) + 1).toString();
+        }
+
         return orders.map(order => ({
-            PK: EntityType.USER + '#' + order.userId, // User is always the partition key
-            SK: `${EntityType.ORDER}#${order.status}#${order.createdAt}`, // Static identifier + date as sort key
+            PK: EntityType.USER + '#' + order.userId,
+            SK: `${EntityType.ORDER}#${order.status}#${order.createdAt}`,
             entityType: EntityType.ORDER,
             id: order.id,
             userId: order.userId,
@@ -197,15 +201,15 @@ export class DataGenerator {
             datePrefix: order.createdAt.split('T')[0],
 
             // our secondary, less frequent access pattern
-            GSI1PK: EntityType.ORDER,
-            GSI1SK: order.status + '#' + order.createdAt
+            GSI1PK: EntityType.ORDER + '#' + generateShardId(),
+            GSI1SK: order.createdAt + '#' + order.status
         }));
     }
 
     static generateSingleTableOrderItems(orderItems: RelationalOrderItem[]): SingleTableOrderItem[] {
         return orderItems.map(orderItem => ({
-            PK: EntityType.USER + '#' + orderItem.orderCustomerUserId, // User is always the partition key
-            SK: `${EntityType.ORDER_ITEM}#${orderItem.createdAt}`, // Static identifier + date as sort key
+            PK: EntityType.USER + '#' + orderItem.orderCustomerUserId,
+            SK: EntityType.ORDER_ITEM + '#' + orderItem.createdAt,
             entityType: EntityType.ORDER_ITEM,
             id: orderItem.id,
             orderId: orderItem.orderId,

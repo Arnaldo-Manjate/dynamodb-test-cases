@@ -270,7 +270,7 @@ export class TestService {
         const testUserId = 'user-00001';
 
         const badResult = await this.relationalDAO.getAllUserOrderItems(testUserId);
-        const goodResult = await this.singleTableDAO.getAllUserOrderItems(testUserId);
+        const goodResult = await this.singleTableDAO.getAllOrdersByDateRangeParallel('2024-01-01', '2024-12-31');
 
         // Comparison Table
         this.log('\n## Design Comparison: GSI Overloading vs Multiple Queries\n');

@@ -146,16 +146,18 @@ export class SingleTableDAO extends BaseDAO {
         );
     }
 
-    async getAllUserOrderItems(userId: string): Promise<TestResult> {
+    async getAllOrdersByDateRange(shardId: string, startDate: string, endDate: string): Promise<TestResult> {
         return this.measureOperation(
             async () => {
-                // GOOD: Using overloaded GSI1 for infrequent access pattern
+                // overloaded GSI1 for infrequent access pattern
                 const command = new QueryCommand({
                     TableName: this.tableName,
                     IndexName: 'GSI1',
-                    KeyConditionExpression: 'GSI1PK = :gsi1pk',
+                    KeyConditionExpression: 'GSI1PK = :entityType AND createdAt BETWEEN :startDate AND :endDate',
                     ExpressionAttributeValues: {
-                        ':gsi1pk': EntityType.ORDER_ITEM
+                        ':entityType': EntityType.ORDER + '#' + shardId,
+                        ':startDate': `${startDate}`,
+                        ':endDate': `${endDate}`
                     },
                     ReturnConsumedCapacity: "TOTAL"
                 });
@@ -164,6 +166,56 @@ export class SingleTableDAO extends BaseDAO {
             'GetAllUserOrderItems_GSI1',
             'SingleTable',
             1
+        );
+    }
+
+    async getAllOrdersByDateRangeParallel(startDate: string, endDate: string): Promise<TestResult> {
+        return this.measureOperation(
+            async () => {
+                // Create 20 workers to fetch each shard in parallel
+                const shardPromises = Array.from({ length: 20 }, (_, index) => {
+                    const shardId = (index + 1).toString();
+                    const command = new QueryCommand({
+                        TableName: this.tableName,
+                        IndexName: 'GSI1',
+                        KeyConditionExpression: 'GSI1PK = :entityType AND createdAt BETWEEN :startDate AND :endDate',
+                        ExpressionAttributeValues: {
+                            ':entityType': EntityType.ORDER + '#' + shardId,
+                            ':startDate': `${startDate}`,
+                            ':endDate': `${endDate}`
+                        },
+                        ReturnConsumedCapacity: "TOTAL"
+                    });
+
+                    return this.client.send(command);
+                });
+
+                // Execute all shard queries in parallel
+                const shardResults = await Promise.all(shardPromises);
+
+                // Combine results from all shards
+                const combinedResult = {
+                    Items: shardResults.flatMap(result => result.Items || []),
+                    Count: shardResults.reduce((sum, result) => sum + (result.Count || 0), 0),
+                    ScannedCount: shardResults.reduce((sum, result) => sum + (result.ScannedCount || 0), 0),
+                    ConsumedCapacity: shardResults.reduce((total, result) => {
+                        if (result.ConsumedCapacity) {
+                            return {
+                                TableName: result.ConsumedCapacity.TableName,
+                                CapacityUnits: (total.CapacityUnits || 0) + (result.ConsumedCapacity.CapacityUnits || 0),
+                                ReadCapacityUnits: (total.ReadCapacityUnits || 0) + (result.ConsumedCapacity.ReadCapacityUnits || 0),
+                                WriteCapacityUnits: (total.WriteCapacityUnits || 0) + (result.ConsumedCapacity.WriteCapacityUnits || 0)
+                            };
+                        }
+                        return total;
+                    }, {} as any)
+                };
+
+                return combinedResult;
+            },
+            'GetAllOrdersByDateRangeParallel',
+            'SingleTable',
+            20 // 20 parallel requests
         );
     }
 
