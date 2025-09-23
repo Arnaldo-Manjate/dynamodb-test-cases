@@ -8,6 +8,14 @@ export class TestService {
     private relationalDAO: RelationalDAO;
     private singleTableDAO: SingleTableDAO;
 
+
+    private readonly tableKeyAttributes: Map<string, string[]> = new Map([
+        ['users-relational', ['userId']],
+        ['orders-relational', ['orderId']],
+        ['orderitems-relational', ['orderId', 'orderItemId']],
+        ['single-table-ecommerce', ['PK', 'SK']]
+    ]);
+
     constructor(region: string = 'us-east-1') {
         this.relationalDAO = new RelationalDAO(
             'users-relational',
@@ -49,6 +57,7 @@ export class TestService {
             await this.testPoint1();
             await this.testPoint2();
             await this.testPoint3();
+            await this.testPoint4();
 
             // Generate and save report
             await this.generateAndSaveReport();
@@ -103,27 +112,24 @@ export class TestService {
         await this.clearTable(this.singleTableDAO.getTableName);
     }
 
+    /**
+     * Gets the key attributes for a given table name using a map-based approach.
+     * This follows the Open/Closed Principle - open for extension, closed for modification.
+     * To add new tables, simply add entries to the tableKeyAttributes map.
+     */
+    private getTableKeyAttributes(tableName: string): string[] {
+        const keyAttributes = this.tableKeyAttributes.get(tableName);
+        if (!keyAttributes) {
+            throw new Error(`Unknown table: ${tableName}. Available tables: ${Array.from(this.tableKeyAttributes.keys()).join(', ')}`);
+        }
+        return keyAttributes;
+    }
+
     private async clearTable(tableName: string): Promise<void> {
         try {
             // Scan the table to get all items
-            // Get the key schema based on the table name
-            let keyAttributes: string[];
-            switch (tableName) {
-                case 'users-relational':
-                    keyAttributes = ['userId'];
-                    break;
-                case 'orders-relational':
-                    keyAttributes = ['orderId'];
-                    break;
-                case 'orderitems-relational':
-                    keyAttributes = ['orderId', 'orderItemId'];
-                    break;
-                case 'single-table-ecommerce':
-                    keyAttributes = ['PK', 'SK'];
-                    break;
-                default:
-                    throw new Error(`Unknown table: ${tableName}`);
-            }
+            // Get the key schema based on the table name using a map
+            const keyAttributes = this.getTableKeyAttributes(tableName);
 
             const scanCommand = new ScanCommand({
                 TableName: tableName,
@@ -161,12 +167,12 @@ export class TestService {
                     await this.relationalDAO.getClient.send(batchDeleteCommand);
                 }
 
-                this.log(`      - Deleted ${result.Items.length} items`);
+                this.log(`Deleted ${result.Items.length} items`);
             } else {
-                this.log(`      - Table is already empty`);
+                this.log(`Table is already empty`);
             }
         } catch (error) {
-            console.error(`      - Error clearing table ${tableName}:`, error);
+            console.error(`Error clearing table ${tableName}:`, error);
             throw error;
         }
     }
@@ -197,52 +203,20 @@ export class TestService {
             // Quick check - try to get one user from each table
             const userCheck = await this.relationalDAO.getUserById('user-00001');
             const orderCheck = await this.relationalDAO.getUserOrders('user-00001');
-            // const orderItemsCheck = await this.relationalDAO.getUserOrderItems('user-00001');
-            // const singleTableUserCheck = await this.singleTableDAO.getUserById('user-00001');
 
-
-
-            // If we get items back, data exists
             return userCheck.success && orderCheck.success && orderCheck.itemCount > 0;
         } catch (error) {
             return false; // Assume no data if check fails
         }
     }
 
-
-
-    // Test method for Point 1
-    private async testPoint1(): Promise<void> {
-        this.log('\n🔍 Point 1: Static Identifiers Enable Powerful Queries vs Multiple Network Requests');
-        this.log('='.repeat(80));
-
-        const testUserId = 'user-00001';
-
-        const relationalResult = await this.relationalDAO.getUserScreenData(testUserId);
-        const singleTableResult = await this.singleTableDAO.getUserScreenData(testUserId);
-
-        // Comparison Table
-        this.log('\n## Design Comparison: Static Identifiers vs Multiple Network Requests\n');
-        this.log('| Aspect | Relational Design | Single Table Design |');
-        this.log('|--------|-------------------|----------------------|');
-        this.log('| **Data Storage** | Multiple tables (users, orders, orderItems) | Single table with composite keys |');
-        this.log('| **Access Pattern** | 3+ separate queries (user + orders + orderItems) | Single query with PK/SK filtering |');
-        this.log('| **Key Structure** | Simple primary keys per table | PK: `USER#userId`, SK: `#ENTITY#date` |');
-        this.log('| **Data Location** | Distributed across tables | Co-located by partition key |');
-        this.log('| **Query Complexity** | Multiple round trips | Single efficient query |');
-        this.log('| **Scalability** | Degrades with more posts (N+1 queries) | Consistent performance |');
-        this.log('| **Performance** | ' + `${relationalResult.duration}ms, ${relationalResult.consumedCapacity?.readCapacityUnits || 'N/A'} RCU` + ' | ' + `${singleTableResult.duration}ms, ${singleTableResult.consumedCapacity?.readCapacityUnits || 'N/A'} RCU` + ' |');
-
-        this.printComparison(relationalResult, singleTableResult);
-    }
-
     // Point 2: Inefficient Access Patterns vs Strategic Design
-    private async testPoint2(): Promise<void> {
-        this.log('\n🔍 Point 2: Inefficient Access Patterns vs Strategic Design');
+    private async testPoint1(): Promise<void> {
+        this.log('\n🔍 Point 1: getting all the data we want to display on the orders screen');
         this.log('='.repeat(60));
 
-        const badResult = await this.relationalDAO.getAllOrders();
-        const goodResult = await this.singleTableDAO.getAllOrders();
+        const badResult = await this.relationalDAO.getUserScreenData('user-00001');
+        const goodResult = await this.singleTableDAO.getUserScreenData('user-00001');
 
         // Comparison Table
         this.log('\n## Design Comparison: Inefficient Access Patterns vs Strategic Design\n');
@@ -259,18 +233,40 @@ export class TestService {
     }
 
 
+    // Test method for Point 1
+    private async testPoint2(): Promise<void> {
+        this.log('\n🔍 Point 1: Querying a user by status');
+        this.log('='.repeat(60));
 
+        const testUserStatus = 'active';
+        const relationalResult = await this.relationalDAO.getUsersByStatus(testUserStatus);
+        const singleTableResult = await this.singleTableDAO.getUsersByStatus(testUserStatus);
+
+        // Comparison Table
+        this.log('\n## Design Comparison: Static Identifiers vs Multiple Network Requests\n');
+        this.log('| Aspect | Relational Design | Single Table Design |');
+        this.log('|--------|-------------------|----------------------|');
+        this.log('| **Data Storage** | Multiple tables (users, orders, orderItems) | Single table with composite keys |');
+        this.log('| **Access Pattern** | 3+ separate queries (user + orders + orderItems) | Single query with PK/SK filtering |');
+        this.log('| **Key Structure** | Simple primary keys per table | PK: `USER#userId`, SK: `#ENTITY#date` |');
+        this.log('| **Data Location** | Distributed across tables | Co-located by partition key |');
+        this.log('| **Query Complexity** | Multiple round trips | Single efficient query |');
+        this.log('| **Scalability** | Degrades with more posts (N+1 queries) | Consistent performance |');
+        this.log('| **Performance** | ' + `${relationalResult.duration}ms, ${relationalResult.consumedCapacity?.readCapacityUnits || 'N/A'} RCU` + ' | ' + `${singleTableResult.duration}ms, ${singleTableResult.consumedCapacity?.readCapacityUnits || 'N/A'} RCU` + ' |');
+
+        this.printComparison(relationalResult, singleTableResult);
+    }
     // Point 3: GSI Overloading vs Multiple Queries
     // Demonstrates: How GSI overloading in single table design can efficiently handle infrequent access patterns
     // while relational design requires multiple queries even with GSIs
     private async testPoint3(): Promise<void> {
-        this.log('\n🔍 Point 3: GSI Overloading vs Multiple Queries');
+        this.log('\n🔍 Point 3: Querying a user by email address');
         this.log('='.repeat(60));
 
-        const testUserId = 'user-00001';
+        const testUserEmail = 'user1@example.com';
 
-        const badResult = await this.relationalDAO.getAllUserOrderItems(testUserId);
-        const goodResult = await this.singleTableDAO.getAllOrdersByDateRangeParallel('2024-01-01', '2024-12-31');
+        const badResult = await this.relationalDAO.getUsersByEmail(testUserEmail);
+        const goodResult = await this.singleTableDAO.getUsersByEmail(testUserEmail);
 
         // Comparison Table
         this.log('\n## Design Comparison: GSI Overloading vs Multiple Queries\n');
@@ -286,11 +282,31 @@ export class TestService {
 
         this.printComparison(badResult, goodResult);
 
-        this.log('\n💡 Key Insight: GSI Overloading in Single Table Design');
-        this.log('   1. Use GSIs for infrequently accessed data patterns');
-        this.log('   2. One GSI can serve multiple access patterns through key overloading');
-        this.log('   3. Avoid GSIs for frequently accessed data (use main table)');
-        this.log('   4. Even with GSIs, relational design often requires multiple queries');
+    }
+
+    private async testPoint4(): Promise<void> {
+        this.log('\n🔍 Point 4: Querying order items by supplier id');
+        this.log('='.repeat(60));
+
+        const testSupplierId = 'supplier-00001';
+
+        const badResult = await this.relationalDAO.getOrderItemsBySupplierId(testSupplierId, '2024-01-01', '2024-12-31');
+        const goodResult = await this.singleTableDAO.getOrderItemsBySupplierId(testSupplierId, '2024-01-01', '2024-12-31');
+
+        // Comparison Table
+        this.log('\n## Design Comparison: GSI Overloading vs Multiple Queries\n');
+        this.log('| Aspect | Relational Design | Single Table Design |');
+        this.log('|--------|-------------------|----------------------|');
+        this.log('| **Query Pattern** | Multiple queries (N+1 problem) | Single GSI query |');
+        this.log('| **Access Steps** | 1. Get user orders (GSI), 2. Get orderItems per order | Overloaded GSI1 |');
+        this.log('| **GSI Usage** | GSI per table + multiple queries | Single overloaded GSI |');
+        this.log('| **Key Structure** | GSI1PK: USER#userId, GSI1SK: createdAt | GSI1PK: USER_ORDER_ITEMS#userId |');
+        this.log('| **Efficiency** | High network overhead | Single efficient query |');
+        this.log('| **Use Case** | Frequent access patterns | Infrequent access patterns |');
+        this.log('| **Results** | ' + `${badResult.duration}ms, ${badResult.consumedCapacity?.readCapacityUnits || 'N/A'} RCU` + ' | ' + `${goodResult.duration}ms, ${goodResult.consumedCapacity?.readCapacityUnits || 'N/A'} RCU` + ' |');
+
+        this.printComparison(badResult, goodResult);
+
     }
 
     private printComparison(relationalResult: TestResult, singleTableResult: TestResult): void {

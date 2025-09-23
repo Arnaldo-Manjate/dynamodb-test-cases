@@ -33,73 +33,6 @@ export class SingleTableDAO extends BaseDAO {
     get getTableName(): string { return this.tableName; }
     get getClient() { return this.client; }
 
-
-    // Will be slower than singleTable getItem but offers more flexible 
-    // access patterns for the user entity.
-    async getUserById(userId: string): Promise<TestResult> {
-        return this.measureOperation(
-            async () => {
-                // GOOD: Generic PK/SK pattern provides flexibility
-                const command = new QueryCommand({
-                    TableName: this.tableName,
-                    KeyConditionExpression: 'PK = :pk AND begins_with(SK, :skPrefix)',
-                    ExpressionAttributeValues: {
-                        ':pk': `${EntityType.USER}#${userId}`,
-                        ':skPrefix': "active#"
-                    },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-                return await this.client.send(command);
-            },
-            'GetUserById',
-            'SingleTable',
-            1
-        );
-    }
-
-    async getAllUsers(): Promise<TestResult> {
-        return this.measureOperation(
-            async () => {
-                // GOOD: Generic PK/SK pattern provides flexibility
-                const command = new QueryCommand({
-                    TableName: this.tableName,
-                    IndexName: 'GSI1',
-                    KeyConditionExpression: 'GSI1PK = :pk',
-                    ExpressionAttributeValues: {
-                        ':pk': `${EntityType.USER}`,
-                    },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-                return await this.client.send(command);
-            },
-            'GetAllUsers',
-            'SingleTable',
-            1
-        );
-    }
-
-    async getUsersByStatus(status: string): Promise<TestResult> {
-        return this.measureOperation(
-            async () => {
-                // GOOD: Generic PK/SK pattern provides flexibility
-                const command = new QueryCommand({
-                    TableName: this.tableName,
-                    IndexName: 'GSI1',
-                    KeyConditionExpression: 'GSI1PK = :pk AND begins_with(GSI1SK, :skPrefix)',
-                    ExpressionAttributeValues: {
-                        ':pk': `${EntityType.USER}`,
-                        ':skPrefix': `${status}#`
-                    },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-                return await this.client.send(command);
-            },
-            'GetUserByStatus',
-            'SingleTable',
-            1
-        );
-    }
-
     async getUserScreenData(userId: string): Promise<TestResult> {
         return this.measureOperation(
             async () => {
@@ -123,24 +56,47 @@ export class SingleTableDAO extends BaseDAO {
         );
     }
 
-    // Efficient Access Patterns - Good Pattern
-    // Strategic GSI usage for global queries
-    async getAllOrders(): Promise<TestResult> {
+
+    async getUsersByStatus(status: string): Promise<TestResult> {
         return this.measureOperation(
             async () => {
-                // GOOD: Efficient GSI query instead of scan
+                // GOOD: Generic PK/SK pattern provides flexibility
                 const command = new QueryCommand({
                     TableName: this.tableName,
                     IndexName: 'GSI1',
-                    KeyConditionExpression: 'GSI1PK = :pk',
+                    KeyConditionExpression: 'GSI1PK = :pk AND begins_with(GSI1SK, :skPrefix)',
                     ExpressionAttributeValues: {
-                        ':pk': `${EntityType.ORDER}`
+                        ':pk': `${EntityType.USER}`,
+                        ':skPrefix': `${status}#`
                     },
                     ReturnConsumedCapacity: "TOTAL"
                 });
                 return await this.client.send(command);
             },
-            'GetAllOrders_EfficientGSI',
+            'GetUserByStatus',
+            'SingleTable',
+            1
+        );
+    }
+
+
+    async getUsersByEmail(email: string): Promise<TestResult> {
+        return this.measureOperation(
+            async () => {
+                // GOOD: Generic PK/SK pattern provides flexibility
+                const command = new QueryCommand({
+                    TableName: this.tableName,
+                    IndexName: 'GSI1',
+                    KeyConditionExpression: 'GSI1PK = :pk AND begins_with(GSI1SK, :skPrefix)',
+                    ExpressionAttributeValues: {
+                        ':pk': `${EntityType.USER}`,
+                        ':skPrefix': `active#${email}`
+                    },
+                    ReturnConsumedCapacity: "TOTAL"
+                });
+                return await this.client.send(command);
+            },
+            'GetUserByEmail',
             'SingleTable',
             1
         );
@@ -169,7 +125,7 @@ export class SingleTableDAO extends BaseDAO {
         );
     }
 
-    async getAllOrdersByDateRangeParallel(startDate: string, endDate: string): Promise<TestResult> {
+    async getOrderItemsBySupplierId(supplierId: string, startDate: string, endDate: string): Promise<TestResult> {
         return this.measureOperation(
             async () => {
                 // Create 20 workers to fetch each shard in parallel
@@ -180,7 +136,7 @@ export class SingleTableDAO extends BaseDAO {
                         IndexName: 'GSI1',
                         KeyConditionExpression: 'GSI1PK = :entityType AND createdAt BETWEEN :startDate AND :endDate',
                         ExpressionAttributeValues: {
-                            ':entityType': EntityType.ORDER + '#' + shardId,
+                            ':entityType': EntityType.ORDER_ITEM + '#' + supplierId + '#' + shardId,
                             ':startDate': `${startDate}`,
                             ':endDate': `${endDate}`
                         },

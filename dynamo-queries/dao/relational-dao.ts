@@ -41,56 +41,6 @@ export class RelationalDAO extends BaseDAO {
     get getOrderItemsTableName(): string { return this.orderItemsTableName; }
     get getClient() { return this.client; }
 
-    async getUsersByStatus(status: string): Promise<TestResult> {
-        return this.measureOperation(
-            async () => {
-                // BAD: Main table's PK is orderId, so we need a GSI to query by userId
-                // This means maintaining an extra index just for this access pattern
-
-                // BAD: Have to scan because we can't query by non-key attribute
-                const command = new ScanCommand({
-                    TableName: this.usersTableName,
-                    FilterExpression: 'status = :status',
-                    ExpressionAttributeValues: { ':status': status },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-
-                const result = await this.client.send(command);
-                return result;
-            },
-            'GetUsersByStatus',
-            'Relational',
-            1
-        );
-    }
-
-    // Point 1: Missing Sort Keys - Bad Pattern
-    // This forces GSI creation for date-based queries
-    async getUserOrders(userId: string): Promise<TestResult> {
-        return this.measureOperation(
-            async () => {
-                // BAD: Main table's PK is orderId, so we need a GSI to query by userId
-                // This means maintaining an extra index just for this access pattern
-
-                // BAD: Have to scan because we can't query by non-key attribute
-                const command = new ScanCommand({
-                    TableName: this.ordersTableName,
-                    FilterExpression: 'userId = :userId',
-                    ExpressionAttributeValues: { ':userId': userId },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-
-                const result = await this.client.send(command);
-                return result;
-            },
-            'GetUserOrders_NoSortKey',
-            'Relational',
-            1
-        );
-    }
-
-    // Point 2: Specific Naming - Bad Pattern
-    // Using descriptive names instead of generic PK/SK
     async getUserById(userId: string): Promise<TestResult> {
         return this.measureOperation(
             async () => {
@@ -108,86 +58,6 @@ export class RelationalDAO extends BaseDAO {
         );
     }
 
-    // Point 3: GSI Necessity Due to Poor Schema - Bad Pattern
-    // Need GSI because we're missing sort keys
-    async getOrdersByDateRange(userId: string, startDate: string, endDate: string): Promise<TestResult> {
-        return this.measureOperation(
-            async () => {
-                // BAD: Forced to use GSI because no sort key on main table
-                // The GSI has userId as PK and createdAt as SK, but main table has orderId as PK
-                const command = new QueryCommand({
-                    TableName: this.ordersTableName,
-                    IndexName: 'OrdersByDateIndex', // Forced GSI usage
-                    KeyConditionExpression: 'userId = :userId AND #createdAt BETWEEN :startDate AND :endDate',
-                    ExpressionAttributeNames: { '#createdAt': 'createdAt' },
-                    ExpressionAttributeValues: {
-                        ':userId': userId,
-                        ':startDate': startDate,
-                        ':endDate': endDate
-                    },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-                return await this.client.send(command);
-            },
-            'GetOrdersByDateRange_GSIRequired',
-            'Relational',
-            1
-        );
-    }
-
-    // Point 4: GSI Naming Anti-patterns - Bad Pattern
-    // Using descriptive names instead of generic names
-    async getUserOrdersWithGSI(userId: string): Promise<TestResult> {
-        return this.measureOperation(
-            async () => {
-                // BAD: Descriptive GSI name instead of generic
-                // BAD: Forced to use GSI because main table schema is poor
-                const command = new QueryCommand({
-                    TableName: this.ordersTableName,
-                    IndexName: 'OrdersByDateIndex', // Should be GSI1, GSI2, etc.
-                    KeyConditionExpression: 'userId = :userId',
-                    ExpressionAttributeValues: { ':userId': userId },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-                return await this.client.send(command);
-            },
-            'GetUserOrders_DescriptiveGSI',
-            'Relational',
-            1
-        );
-    }
-
-
-
-    // Inefficient Access Patterns - Bad Pattern
-    // Scan operation due to poor schema design
-    async getAllOrders(): Promise<TestResult> {
-        return this.measureOperation(
-            async () => {
-                // BAD: Scan operation because no efficient access pattern
-                const command = new ScanCommand({
-                    TableName: this.ordersTableName,
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-                return await this.client.send(command);
-            },
-            'GetAllOrders_ScanRequired',
-            'Relational',
-            1
-        );
-    }
-
-
-
-    // ========================================
-    // POINTS 3 & 4 MERGED: MULTIPLE REQUESTS VS SINGLE QUERY
-    // Demonstrates: How relational design requires multiple network requests
-    // for the same data that single table design can get in one query
-    // ========================================
-
-    // Point 3 & 4: Multiple Network Requests - Bad Pattern
-    // Need 4 separate requests to get the same data that single table gets in 1
-    // This demonstrates the inefficiency of relational design for frequently accessed data
     async getUserScreenData(userId: string): Promise<TestResult> {
         return this.measureOperation(
             async () => {
@@ -224,13 +94,9 @@ export class RelationalDAO extends BaseDAO {
                 const allOrderItems = orderItemsResult.Items || [];
                 const orderItemsCapacity = orderItemsResult.ConsumedCapacity?.CapacityUnits || 0;
 
-                // Return combined result with proper consumed capacity
                 const totalCapacity = (user.ConsumedCapacity?.CapacityUnits || 0) +
                     (orders.ConsumedCapacity?.CapacityUnits || 0) +
                     orderItemsCapacity;
-
-                // Request count is tracked by incrementRequestCount() in base DAO
-                // Each call to client.send() increments the counter
 
                 return {
                     user: user.Item,
@@ -254,37 +120,122 @@ export class RelationalDAO extends BaseDAO {
         );
     }
 
-    // Data insertion methods
-    async createUser(user: any): Promise<TestResult> {
+
+    async getUsersByStatus(status: string): Promise<TestResult> {
         return this.measureOperation(
             async () => {
-                const command = new PutCommand({
+                // Not Ideal: main table's PK is userId, so we need a GSI to query by status
+                // This means maintaining an extra index just for one access pattern
+                const command = new QueryCommand({
                     TableName: this.usersTableName,
-                    Item: user,
+                    IndexName: 'UsersByStatusIndex',
+                    KeyConditionExpression: 'status = :status',
+                    ExpressionAttributeValues: { ':status': status },
                     ReturnConsumedCapacity: "TOTAL"
                 });
-                return await this.client.send(command);
+
+                const result = await this.client.send(command);
+                return result;
             },
-            'CreateUser',
+            'GetUsersByStatus',
             'Relational',
             1
         );
     }
 
-    async createOrder(order: any): Promise<TestResult> {
+
+    async getUsersByEmail(email: string): Promise<TestResult> {
         return this.measureOperation(
             async () => {
-                const command = new PutCommand({
+                // since we don't have a GSI for email, we need to scan the table
+                const command = new ScanCommand({
+                    TableName: this.usersTableName,
+                    FilterExpression: 'email = :email',
+                    ExpressionAttributeValues: { ':email': email },
+                    ReturnConsumedCapacity: "TOTAL"
+                });
+
+                const result = await this.client.send(command);
+                return result;
+            },
+            'GetUsersByEmail',
+            'Relational',
+            1
+        );
+    }
+
+    async getUserOrders(userId: string): Promise<TestResult> {
+        return this.measureOperation(
+            async () => {
+
+                // forced to use a GSI for this access pattern
+                const command = new QueryCommand({
                     TableName: this.ordersTableName,
-                    Item: order,
+                    IndexName: 'OrdersByUserIdIndex',
+                    KeyConditionExpression: 'userId = :userId',
+                    ExpressionAttributeValues: { ':userId': userId },
+                    ReturnConsumedCapacity: "TOTAL"
+                });
+
+                const result = await this.client.send(command);
+                return result;
+            },
+            'GetUserOrders_NoSortKey',
+            'Relational',
+            1
+        );
+    }
+
+    // How many order items are being bought from a specific supplier? 
+    async getAllOrdersByDateRange(startDate: string, endDate: string): Promise<TestResult> {
+        return this.measureOperation(
+            async () => {
+                // since it doesn't use sharding - this is just for comparison
+                const command = new ScanCommand({
+                    TableName: this.ordersTableName,
+                    FilterExpression: '#createdAt BETWEEN :startDate AND :endDate',
+                    ExpressionAttributeNames: { '#createdAt': 'createdAt' },
+                    ExpressionAttributeValues: {
+                        ':startDate': startDate,
+                        ':endDate': endDate
+                    },
                     ReturnConsumedCapacity: "TOTAL"
                 });
                 return await this.client.send(command);
             },
-            'CreateOrder',
+            'GetAllOrdersByDateRange',
             'Relational',
             1
         );
+    }
+
+    async getOrderItemsBySupplierId(supplierId: string, startDate: string, endDate: string): Promise<TestResult> {
+        return this.measureOperation(
+            async () => {
+                // BAD: Scan operation with filter because no efficient access pattern
+                // Note: Relational design doesn't use sharding, so shardId parameter is ignored
+                // This demonstrates the inefficiency of relational design for this access pattern
+                const command = new ScanCommand({
+                    TableName: this.orderItemsTableName,
+                    FilterExpression: '#supplierId = :supplierId AND #createdAt BETWEEN :startDate AND :endDate',
+                    ExpressionAttributeNames: { '#createdAt': 'createdAt' },
+                    ExpressionAttributeValues: {
+                        ':supplierId': supplierId,
+                        ':startDate': startDate,
+                        ':endDate': endDate
+                    },
+                    ReturnConsumedCapacity: "TOTAL"
+                });
+                return await this.client.send(command);
+            },
+            'GetOrderItemsBySupplierId_ScanRequired',
+            'Relational',
+            1
+        );
+    }
+
+    async batchCreateItems(items: any[]): Promise<TestResult> {
+        return this.batchWriteWithChunking(items, this.usersTableName, 'BatchCreateItems');
     }
 
     async batchCreateUsers(users: any[]): Promise<TestResult> {
@@ -299,57 +250,4 @@ export class RelationalDAO extends BaseDAO {
         return this.batchWriteWithChunking(orderItems, this.orderItemsTableName, 'BatchCreateOrderItems');
     }
 
-
-    // Point 6: Multiple Queries Required - Bad Pattern
-    // Need to first get all orders by user, then query each order for orderItems
-    async getAllUserOrderItems(userId: string): Promise<TestResult> {
-        return this.measureOperation(
-            async () => {
-                // BAD: Multiple network requests required
-                // 1. First get all orders by the user
-                const ordersCommand = new QueryCommand({
-                    TableName: this.ordersTableName,
-                    IndexName: 'OrdersByDateIndex',
-                    KeyConditionExpression: 'userId = :userId',
-                    ExpressionAttributeValues: { ':userId': userId },
-                    ReturnConsumedCapacity: "TOTAL"
-                });
-                const orders = await this.client.send(ordersCommand);
-
-                // 2. Then get orderItems for each order
-                let allOrderItems: any[] = [];
-                let totalCapacity = orders.ConsumedCapacity?.CapacityUnits || 0;
-
-                if (orders.Items && orders.Items.length > 0) {
-                    for (const order of orders.Items) {
-                        const orderItemsCommand = new QueryCommand({
-                            TableName: this.orderItemsTableName,
-                            IndexName: 'OrderItemsByOrderCustomerIndex',
-                            KeyConditionExpression: 'orderCustomerUserId = :orderCustomerUserId',
-                            ExpressionAttributeValues: {
-                                ':orderCustomerUserId': order.userId
-                            },
-                            ReturnConsumedCapacity: "TOTAL"
-                        });
-                        const orderOrderItems = await this.client.send(orderItemsCommand);
-                        if (orderOrderItems.Items) {
-                            allOrderItems.push(...orderOrderItems.Items);
-                        }
-                        totalCapacity += orderOrderItems.ConsumedCapacity?.CapacityUnits || 0;
-                    }
-                }
-
-                return {
-                    Items: allOrderItems,
-                    Count: allOrderItems.length,
-                    ConsumedCapacity: {
-                        CapacityUnits: totalCapacity
-                    }
-                };
-            },
-            'GetAllUserOrderItems_MultipleQueries',
-            'Relational',
-            1
-        );
-    }
 } 

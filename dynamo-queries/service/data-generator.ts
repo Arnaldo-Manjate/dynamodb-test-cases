@@ -89,7 +89,7 @@ export class DataGenerator {
 
         for (let i = 1; i <= count; i++) {
             const userId = `user-${i.toString().padStart(5, '0')}`;
-            // every 10th user (user-00010, user-00020, user-00030, etc.) is deactivated
+            // every 10th user is deactivated
             const status = i % 10 === 0 ? "deactivated" : "active";
             users.push({
                 id: userId,
@@ -145,11 +145,13 @@ export class DataGenerator {
             const quantity = Math.floor(Math.random() * 5) + 1; // 1-5 items
             const unitPrice = Math.round((Math.random() * 200 + 10) * 100) / 100; // $10-$210
             const createdAt = new Date(Date.now() - Math.random() * 365 * 24 * 60 * 60 * 1000).toISOString();
+            const supplierId = `supplier-${Math.floor(Math.random() * 5).toString().padStart(4, '0')}`;
 
             orderItems.push({
-                orderItemId,
                 id: orderItemId,
+                userId,
                 orderId,
+                supplierId,
                 productId,
                 productName,
                 quantity,
@@ -177,16 +179,14 @@ export class DataGenerator {
             pricingPlan: user.pricingPlan,
 
             // our secondary, less frequent access pattern
-            // second aim is top get all users by email
+            // second aim is top get all users by email 
+            // (I can now search activate and deactivated users by email)
             GSI1PK: EntityType.USER,
-            GSI1SK: user.email
+            GSI1SK: user.status + '#' + user.email
         }));
     }
 
     static generateSingleTableOrders(orders: RelationalOrder[]): SingleTableOrder[] {
-        function generateShardId(): string {
-            return (Math.floor(Math.random() * 20) + 1).toString();
-        }
 
         return orders.map(order => ({
             PK: EntityType.USER + '#' + order.userId,
@@ -201,18 +201,23 @@ export class DataGenerator {
             datePrefix: order.createdAt.split('T')[0],
 
             // our secondary, less frequent access pattern
-            GSI1PK: EntityType.ORDER + '#' + generateShardId(),
+            GSI1PK: EntityType.ORDER,
             GSI1SK: order.createdAt + '#' + order.status
         }));
     }
 
     static generateSingleTableOrderItems(orderItems: RelationalOrderItem[]): SingleTableOrderItem[] {
+        function generateShardId(): string {
+            return (Math.floor(Math.random() * 20) + 1).toString();
+        }
+
         return orderItems.map(orderItem => ({
             PK: EntityType.USER + '#' + orderItem.orderCustomerUserId,
             SK: EntityType.ORDER_ITEM + '#' + orderItem.createdAt,
             entityType: EntityType.ORDER_ITEM,
             id: orderItem.id,
             orderId: orderItem.orderId,
+            supplierId: orderItem.supplierId,
             productId: orderItem.productId,
             productName: orderItem.productName,
             quantity: orderItem.quantity,
@@ -221,8 +226,8 @@ export class DataGenerator {
             datePrefix: orderItem.createdAt.split('T')[0],
 
             // our secondary, less frequent access pattern
-            GSI1PK: EntityType.ORDER_ITEM,
-            GSI1SK: orderItem.orderId
+            GSI1PK: EntityType.ORDER_ITEM + "#" + orderItem.supplierId + "#" + generateShardId(),
+            GSI1SK: orderItem.createdAt
         }));
     }
 

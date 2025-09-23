@@ -26,9 +26,10 @@ export interface RelationalOrder {
 }
 
 export interface RelationalOrderItem {
-    orderItemId: string;
     id: string;
+    userId: string;
     orderId: string;
+    supplierId: string;
     productId: string;
     productName: string;
     quantity: number;
@@ -71,6 +72,7 @@ export interface SingleTableOrderItem {
     id: string;
     orderId: string;
     productId: string;
+    supplierId: string;
     productName: string;
     quantity: number;
     unitPrice: number;
